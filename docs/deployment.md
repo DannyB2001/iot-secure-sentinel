@@ -151,7 +151,7 @@ sudo apt install -y curl gnupg ca-certificates git build-essential
 sudo timedatectl set-timezone Europe/Prague
 ```
 
-Install `chrony` for clock sync (HMAC needs accurate clocks):
+Install `chrony` for clock sync (the cloud rejects events with timestamps more than 5 min in the future):
 
 ```bash
 sudo apt install -y chrony
@@ -341,7 +341,7 @@ In the Node-RED editor:
 3. Open the MongoDB config node, set host `127.0.0.1`, port `27017`, db `iot_secure_sentinel`, user `iris`, password
 4. Open the MQTT broker config node, set host `127.0.0.1:1883`, username `iris-flow`, password
 5. Open the input node, switch from the demo inject to your transport (serial for USB, MQTT subscription `iot-secure-sentinel/raw` for radio bridge)
-6. Open the cloud forwarder HTTP nodes (planned extension), set base URL to your Vercel URL, e.g. `https://iris.example.app`. The flow loads the HMAC secret and `gatewayId` from `/etc/iris-gateway/credentials.json`
+6. Open the cloud forwarder HTTP nodes (planned extension), set base URL to your Vercel URL, e.g. `https://iris.example.app`. The flow loads the `apiToken` and `deviceId` from `/etc/iris-gateway/credentials.json` and sends `Authorization: Bearer dt_...` on every request
 7. `Deploy`
 
 The `Demo payload` inject node is a useful sanity check before connecting hardware.
@@ -382,31 +382,32 @@ mosquitto_sub -u iris-flow -P '<password>' -t 'iot-secure-sentinel/raw' -v
 
 You should see telemetry frames every 60 seconds.
 
-## 11. Register the gateway with the cloud
+## 11. Register the gateway and node with the cloud
 
-Issue a registration token from the dashboard at `/settings/registration-tokens` (admin only). Copy the token (shown once).
+Issue a registration token from the dashboard at `/settings/registration-tokens` (admin only). Copy the token (shown once). Repeat for each device (gateway + each sensor node).
 
-On the gateway:
+On the gateway, register itself:
 
 ```bash
-curl -X POST https://iris.example.app/api/gateway/register \
+curl -X POST https://iris.example.app/api/device/register \
   -H 'Content-Type: application/json' \
   -d '{
-    "deviceId": "iris-gw-001",
     "registrationToken": "rt_5f7a9c1e3d4b6a8c0e2f4d6b8a0c2e4f",
-    "name": "Server room A",
+    "name": "iris-gw-001",
+    "type": "gateway",
     "location": "Building 4, floor -1",
+    "ipAddress": "192.168.1.50",
     "firmwareVersion": "1.0.0"
   }'
 ```
 
-The response contains the assigned `gatewayId` and the HMAC secret. Store both in `/etc/iris-gateway/credentials.json`:
+The response contains the assigned `deviceId` (Mongo ObjectId) and the API token (returned exactly once). Store both in `/etc/iris-gateway/credentials.json`:
 
 ```json
 {
   "baseUrl": "https://iris.example.app",
-  "gatewayId": "651f2a1b3c4d5e6f7a8b9c0d",
-  "hmacSecret": "hs_5f7a9c1e3d4b6a8c0e2f4d6b8a0c2e4f6d8b0a2c"
+  "deviceId": "651f2a1b3c4d5e6f7a8b9c0d",
+  "apiToken": "dt_5f7a9c1e3d4b6a8c0e2f4d6b8a0c2e4f6d8b0a2c"
 }
 ```
 
@@ -417,7 +418,38 @@ sudo chmod 600 /etc/iris-gateway/credentials.json
 sudo chown node-red:node-red /etc/iris-gateway/credentials.json
 ```
 
-The Node-RED flow reads this file on startup and uses it for outbound HMAC headers.
+The Node-RED flow reads this file on startup and uses it as the bearer token for outbound calls (`Authorization: Bearer dt_...`).
+
+Register each sensor node similarly with its own registration token:
+
+```bash
+curl -X POST https://iris.example.app/api/device/register \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "registrationToken": "rt_<separate token for the node>",
+    "name": "node-01",
+    "type": "iotNode",
+    "location": "Building 4, vault A",
+    "firmwareVersion": "1.0.0"
+  }'
+```
+
+Then register sensors on each node (one row per physical sensor):
+
+```bash
+curl -X POST https://iris.example.app/api/sensor/register \
+  -H 'Authorization: Bearer <admin session is preferred via the dashboard>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "deviceId": "<node device id from above>",
+    "name": "Vault accelerometer",
+    "sensorType": "accelerometer",
+    "threshold": 1.20,
+    "enabled": true
+  }'
+```
+
+The dashboard `/devices` and `/settings` flows are easier than curl for this step in practice.
 
 ## 12. Iteration 2: Suricata IDS
 
@@ -442,7 +474,7 @@ Enable EVE JSON output and feed it into Node-RED:
 sudo tail -f /var/log/suricata/eve.json
 ```
 
-Add a Node-RED `tail` input on `/var/log/suricata/eve.json`, parse JSON, feed into the rule engine subflow that calls `POST /api/security-event` and `POST /api/firewall/rule` (HMAC-signed).
+Add a Node-RED `tail` input on `/var/log/suricata/eve.json`, parse JSON, feed into the rule engine subflow that calls `POST /api/event/create` (with `eventType: "networkAnomaly"`) and `POST /api/firewall/applyRule`. Both calls use the gateway's bearer token from `/etc/iris-gateway/credentials.json`.
 
 Suricata runs in IDS mode (passive sniffing). Block decisions are taken by Node-RED + iptables. Expected detect-to-block latency budget: under 30 seconds.
 
@@ -622,7 +654,7 @@ Gateway flow: Node-RED keeps a `flows_backup.json`; `Menu → Import → replace
 | MongoDB `connect ECONNREFUSED`                    | `systemctl status mongod`                                  |
 | Cloud `INVALID_TOKEN` on register                 | token expired (24 h) or already used; issue a new one      |
 | Cloud `TIMESTAMP_IN_FUTURE`                       | gateway clock drift; check `chronyc tracking`              |
-| Cloud `UNAUTHORIZED` on telemetry POST            | HMAC secret mismatch (re-register), nonce reuse, or clock skew |
+| Cloud `unauthorized` on event/heartbeat POST      | API token mismatch (re-register), or device removed in cloud   |
 | High alarm visibility latency (> 10 s)            | TanStack Query polling interval correct? Mongo writes slow? Network round-trip? |
 | Vercel build fails                                | check `MONGODB_URI` env var; check `bun install` logs      |
 | Atlas connection times out from Vercel            | confirm Atlas Network Access allows `0.0.0.0/0`            |
@@ -634,13 +666,13 @@ Gateway flow: Node-RED keeps a `flows_backup.json`; `Menu → Import → replace
 - [ ] MongoDB on Pi binds to `127.0.0.1` only, requires authentication
 - [ ] Atlas: strong DB user password, IP allowlist (or `0.0.0.0/0` with strong password)
 - [ ] Mosquitto requires authentication; ACL restricts `iot-secure-sentinel/firewall` to two publishers
-- [ ] HMAC secret in `/etc/iris-gateway/credentials.json` is `chmod 600`, owned by `node-red:node-red`
+- [ ] API token in `/etc/iris-gateway/credentials.json` is `chmod 600`, owned by `node-red:node-red`
 - [ ] Cloud Atlas connection uses TLS (default in connection string)
 - [ ] `AUTH_SECRET` is at least 32 bytes, generated per environment
 - [ ] `CRON_SECRET` is at least 32 bytes
 - [ ] User passwords hashed with Argon2id (memory cost 64 MB, time cost 3, parallelism 1)
-- [ ] HMAC secrets stored as SHA-256 hex digest, compared with `crypto.timingSafeEqual`
-- [ ] HMAC requests carry single-use UUID `X-Nonce` (10-minute replay window)
+- [ ] Device API tokens stored as SHA-256 hex digest, compared with `crypto.timingSafeEqual`
+- [ ] HTTPS enforced for all device → cloud calls (TLS terminates the bearer token)
 - [ ] Default user role is `reader`; admin must explicitly elevate
 - [ ] Pi management interface reachable only from admin VLAN
 - [ ] IoT subnet (`eth1`) has no direct internet route; FORWARD policy is DROP with explicit allow-list
@@ -649,3 +681,4 @@ Gateway flow: Node-RED keeps a `flows_backup.json`; `Menu → Import → replace
 - [ ] Backups encrypted at source, S3 bucket has SSE-KMS and Block Public Access
 - [ ] Backups verified with a quarterly restore test
 - [ ] HARDWARIO radio: per-node HMAC + monotonic counter is on the iter-2 roadmap (open question in `iot_design.md`)
+- [ ] Device API token rotation procedure documented (re-register on suspected compromise)

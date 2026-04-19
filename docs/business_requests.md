@@ -4,302 +4,292 @@
 
 **Iris Gateway** (internal working title: IoT Secure Sentinel)
 
-## Vision
+## Application description
 
-Iris Gateway is a local security node for protected spaces. It monitors physical tampering, environmental conditions, and IoT network traffic in a given area. Decision logic runs locally on the gateway. The cloud handles visualization, configuration, and long-term audit.
+The application is an IoT security system for monitoring objects through distributed sensors and centralized event evaluation. The system is composed of IoT nodes built on the HARDWARIO platform that collect data from sensors (motion detection, door/window contact, temperature, smoke) and forward it to a Raspberry Pi gateway.
 
-## Business problem
+The gateway acts as an edge tier that receives data from IoT nodes, performs preprocessing, and relays it to the backend. The backend handles application logic for security event evaluation, persists data to MongoDB, and exposes data through a REST API.
 
-Small organizations and homes deploy large numbers of low-cost IoT devices without security guarantees. These devices often communicate unencrypted and never receive firmware updates. At the same time, protected spaces (server rooms, archives, technical rooms) require basic environmental monitoring and physical tamper detection.
-
-Pure cloud solutions fail during connectivity outages and hand security-sensitive data to a third party. Iris Gateway solves both: decisions stay local, only aggregated data and alarm events go to the cloud.
+The web application lets users observe the current system state, browse event history, and react to alarms. When an abnormal state is detected (motion in a guarded area, sensor tamper, temperature out of range, smoke), the system raises an alarm event that is recorded and surfaced to the operator.
 
 ## Project iterations
 
-The project has two iterations with explicit MVP scope:
-
 ### Iteration 1: MVP (current repository state)
 
-- tamper detection via accelerometer
-- temperature monitoring
-- local Node-RED flow with validation, aggregation, persistence
-- local MongoDB persistence (alarms, telemetry, outbox)
-- HTTPS forwarding to the cloud with HMAC authentication
-- cloud dashboard with alarm acknowledgement, threshold configuration, arm/disarm
+- HARDWARIO Core Module sensor node with accelerometer + temperature
+- tamper detection (acceleration above threshold) and environmental monitoring
+- Raspberry Pi gateway running Node-RED, local MongoDB, Mosquitto MQTT
+- HTTPS REST forwarding to the backend with DEVICE role bearer token
+- web dashboard with active alarms, event history, device status, alarm acknowledgement
 
-### Iteration 2: Network IDS layer (design only, not implemented)
+### Iteration 2: Extended sensor support and network IDS (designed only)
 
-- packet inspection over the IoT subnet (Suricata)
-- firewall lockdown via iptables on detection of a compromised device
-- physical kill switch (button on the gateway)
-- bidirectional cloud ↔ gateway communication for arming and rule configuration
+- additional sensor types on the IoT node: PIR motion, magnetic door/window contact, smoke
+- Suricata IDS over the IoT subnet
+- iptables firewall lockdown on detection of a compromised device
+- physical kill switch on the gateway
+- bidirectional cloud-to-gateway configuration push
 
-The documentation covers both iterations. The repository code currently delivers iteration 1.
+The repository currently delivers iteration 1. Iteration 2 is fully specified in the design documents.
+
+## Application topology
+
+```
++---------+      +---------------+     +-----------+      +-----------+
+| Sensors | ---> | HARDWARIO Node| --> | Pi Gateway| ---> | Backend   | --> MongoDB
++---------+      +---------------+     +-----------+      +-----------+
+                                                                |
+                                                                v
+                                                          +-------------+      +------+
+                                                          | Web App     | <--> | User |
+                                                          +-------------+      +------+
+```
+
+Layers:
+- **Object** — sensors + HARDWARIO IoT Node
+- **Local Gateway** — Raspberry Pi (edge)
+- **Server** — Backend API + MongoDB
+- **Client** — Web application + User
+
+## Role profiles
+
+| Code     | Name           | Description                                                                                       |
+| -------- | -------------- | ------------------------------------------------------------------------------------------------- |
+| `ADMIN`    | Administrator  | Full system access. User management, device configuration, alarm settings, all data and operations. |
+| `OPERATOR` | Operator       | Operational control. Watches device state, reacts to alarms, works with current events. Cannot change system configuration. |
+| `USER`     | User           | Standard user. Views security state, event history, and receives notifications.                   |
+| `DEVICE`   | Device         | Role representing an IoT device (node or gateway). Used to authenticate devices against the backend; restricted to data submission endpoints. |
+
+## Role group profiles
+
+| Code                 | Name                | Description                                              |
+| -------------------- | ------------------- | -------------------------------------------------------- |
+| `SYS_MGMT`           | System Management   | Full system administration. Contains `ADMIN`.            |
+| `MONITORING`         | Monitoring          | Watches the system and reacts to alarms. Contains `OPERATOR`, `USER`. |
+| `DEVICE_INTEGRATION` | Device Integration  | Device-to-system communication. Contains `DEVICE`.       |
 
 ## Actors
 
-### A1: Security Operator
+### A1: Administrator
 
-Operations role in the IT team or facility management. Watches alarm state, acknowledges incidents, manages thresholds. Works primarily with the React dashboard.
+System owner role. Manages users, registers devices, configures sensor thresholds, audits alarms.
 
-**Main interests:** quick view of current state, audit of alarm events, configuration of thresholds and rules.
+**Maps to role:** `ADMIN`.
 
-### A2: IT Administrator
+### A2: Operator
 
-Technical role. Deploys gateways, manages devices (nodes), maintains IDS rules, integrates with monitoring stacks.
+Security operations role. Monitors active alarms, acknowledges incidents, reviews event history.
 
-**Main interests:** device registration, firmware configuration, IDS rules, log integration into SIEM.
+**Maps to role:** `OPERATOR`.
 
-### A3: Service Technician
+### A3: User
 
-Performs installation and physical maintenance of nodes and gateways.
+End-user / homeowner. Views the dashboard, receives notifications.
 
-**Main interests:** post-install verification, threshold calibration, battery replacement.
+**Maps to role:** `USER`.
 
-### A4: Homeowner
+### A4: Service Technician
 
-Simplified user role. Sees the armed/disarmed state, receives notifications, can press the kill switch.
+Performs installation, battery replacement, and on-site verification. Authenticates as Administrator.
 
-**Main interests:** confidence the system is running, simple disarm during false alarms.
+**Maps to role:** `ADMIN`.
 
-### A5: Iris Cloud App
+### A5: IoT Device (Node / Gateway)
 
-System actor. Receives data from gateways, stores it, presents it to users.
+System actor representing the gateway and the sensor node. Authenticates with a per-device bearer token (issued at registration) and assumes the `DEVICE` role for data submission.
 
-### A6: IoT Devices in the Subnet
-
-Passive actor for iteration 2. Target subject of the IDS layer monitoring and potential firewall lockdown.
-
-## Actor → role mapping
-
-The cloud uses four authorization roles. Actors map onto roles as follows:
-
-| Actor                         | UserRole         | Notes                                                     |
-| ----------------------------- | ---------------- | --------------------------------------------------------- |
-| A1 Security Operator          | `operator`       | acknowledges alarms, toggles armed state                  |
-| A2 IT Administrator           | `admin`          | full access incl. registration tokens and config changes  |
-| A3 Service Technician         | `admin`          | installs gateways, needs registration token issuance      |
-| A4 Homeowner                  | `user`           | simplified view, can disarm and acknowledge               |
-| public dashboard / read-only  | `reader`         | view only, no mutations                                   |
-| A5 Iris Cloud App             | system           | runtime; no UserRole                                      |
-
-The default role for newly created accounts is `reader`. `admin` must explicitly elevate.
+**Maps to role:** `DEVICE`.
 
 ## Products
 
 ### P1: Iris Gateway HW
 
-Physical appliance (Raspberry Pi 4 + HARDWARIO Core Module + accelerometer + temperature sensor + kill switch button). Delivered as a turn-key unit.
+Physical appliance: Raspberry Pi 4 + HARDWARIO Core Module + sensor set (accelerometer, temperature; PIR / magnetic / smoke in iteration 2) + kill switch button.
 
-### P2: Iris Gateway Firmware & Flow
+### P2: Iris Gateway Firmware & Edge Flow
 
-Node firmware (HARDWARIO C SDK) and the Node-RED flow running on Raspberry Pi. Local logic and persistence.
+Node firmware (HARDWARIO C SDK) and the Node-RED flow running on the Pi. Local logic, local persistence, cloud forwarding.
 
-### P3: Iris Cloud App
+### P3: Iris Cloud Backend
 
-Custom Next.js 16 application (App Router) with React 19 frontend, Mongoose models on MongoDB Atlas. Visualization, configuration, audit.
+Custom Next.js 16 backend with REST endpoints, Mongoose 8 over MongoDB Atlas, role-based authorization (Auth.js v5 sessions for users, bearer tokens for devices).
+
+### P4: Iris Web Application
+
+React 19 frontend (single Next.js project with the backend) with shadcn/ui and TanStack Query 5-second polling.
 
 ## Business use cases
 
-Formal catalog. The `UC-XXX` IDs are referenced in other documents (`backend_design.md`, `frontend_design.md`).
+Each UC maps to one or more backend commands documented in [backend_design.md](backend_design.md).
 
-### UC-001: Register gateway in the cloud
+### UC-001: Register IoT device
 
-- **Actor:** A2 (IT Administrator) or A3 (Service Technician)
-- **Precondition:** gateway is installed and has connectivity; an admin has issued a registration token
-- **Trigger:** first gateway boot
+- **Actors:** A1 (Administrator), A4 (Service Technician); A5 (Device) executes
+- **Precondition:** an Administrator has issued a registration token for the device label
+- **Trigger:** first device boot (gateway or node provisioning)
 - **Main flow:**
-  1. Gateway calls `POST /api/gateway/register` with its `deviceId` (gateway hardware id, e.g. `iris-gw-001`) and the registration token
-  2. Cloud validates the token, creates a `Gateway` document, generates an HMAC secret
-  3. Cloud returns `gatewayId`, the HMAC secret (once), and the initial configuration
-  4. Gateway stores credentials in `/etc/iris-gateway/credentials.json`
-- **Alternative:** token invalid or already used → `INVALID_TOKEN`
-- **Alternative:** `deviceId` already registered → `GATEWAY_ALREADY_EXISTS`
-- **Result:** gateway is paired with the cloud and holds current configuration
+  1. Device calls `device/register` with the registration token, name, type, and location
+  2. Backend validates the token, creates a `device` document, generates an API token
+  3. Backend returns the `deviceId`, the API token (once), and any initial configuration
+  4. Device stores credentials locally and uses the API token for subsequent calls
+- **Alternative:** invalid or consumed token → `invalidToken`
+- **Alternative:** device with the same `name` already exists → `deviceAlreadyExists`
+- **Result:** device is registered with status `online`; can submit data
 
-### UC-002: Receive standard telemetry
+### UC-002: Device heartbeat
 
-- **Actors:** A5 (cloud), A2 (passive)
-- **Precondition:** UC-001 completed
-- **Trigger:** gateway sends an aggregated telemetry record
+- **Actor:** A5 (Device)
+- **Trigger:** periodic schedule (e.g. every 60 s for the gateway, configurable for the node)
 - **Main flow:**
-  1. Gateway calls `POST /api/telemetry` with HMAC headers and a payload matching `api_contract.md` (sensor `deviceId` plus `gatewayId`)
-  2. Cloud validates HMAC, validates DTO with Zod, inserts into the `telemetry` collection, updates `gateway.lastSeenAt`
-  3. Cloud returns `{ id }`
-- **Alternative:** Zod validation fails → `INVALID_DTO`
-- **Alternative:** timestamp drift > 5 min → `TIMESTAMP_IN_FUTURE`
-- **Result:** telemetry is available via `GET /api/telemetry`
+  1. Device calls `device/heartbeat` with its `deviceId`
+  2. Backend verifies the device exists, updates `lastSeen`, evaluates status
+- **Alternative:** unknown device → `deviceNotFound`
+- **Result:** device status is `online`; cron eventually flips it to `offline` if heartbeats stop
 
-### UC-003: Receive alarm event
+### UC-003: Receive sensor / security event
 
-- **Actors:** A5 (cloud), A1 (passive)
-- **Precondition:** gateway is armed (otherwise the gateway flow does not forward the alarm; see UC-008)
-- **Trigger:** gateway detects acceleration threshold breach
+- **Actor:** A5 (Device); A2 / A3 (passive)
+- **Trigger:** sensor reading meets event criteria (accelerometer above threshold, motion detected, door opened, smoke detected, temperature out of bounds)
 - **Main flow:**
-  1. Gateway calls `POST /api/alarm` outside the standard aggregation window
-  2. Cloud stores the alarm with `priority: high`, `state: unresolved`
-  3. The alarm becomes visible to operators on the next dashboard refresh (within 5 s polling interval)
-- **Alternative:** alarm received while gateway is reported as `disarmed` in the cloud → `200 OK` with warning code `gateway/disarmed`; alarm stored with `priority: low` and not propagated
-- **Result:** alarm is in the dashboard, security operator sees it within 5 s
+  1. Device calls `event/create` with `deviceId`, `sensorId`, `eventType`, `severity`, `value`, `message`, `timestamp`
+  2. Backend validates the device and sensor, persists the event
+  3. Backend evaluates whether the event should trigger an alarm (severity + sensor threshold + device state)
+  4. If the rule fires, the backend creates a related `alarm` document
+- **Result:** event is in the audit log; if applicable an alarm is active and visible in the dashboard within the next polling tick (≤ 5 s)
 
 ### UC-004: View dashboard
 
-- **Actors:** A1 (Security Operator), A4 (Homeowner, simplified view), A2
-- **Trigger:** user opens `/` or `/gateway/:id`
+- **Actors:** A1, A2, A3
+- **Trigger:** user opens `/dashboard`
 - **Main flow:**
-  1. Server Component fetches `GET /api/gateway` and `GET /api/alarm?state=unresolved`
-  2. Client Components poll the same endpoints every 5 s via TanStack Query
-  3. Detail screen calls `GET /api/gateway/:id`, `GET /api/telemetry?gatewayId=...`, `GET /api/alarm?gatewayId=...`
-- **Result:** user sees gateway list, KPI tiles, recent alarms, telemetry charts
+  1. Frontend calls `dashboard/getOverview` for KPIs (devices online, active alarms, latest events)
+  2. Frontend polls `alarm/list` and `dashboard/getOverview` every 5 s via TanStack Query
+- **Result:** user sees the current security posture
 
 ### UC-005: Acknowledge alarm
 
-- **Actor:** A1 (Security Operator)
-- **Precondition:** an alarm in state `unresolved` exists
+- **Actor:** A1, A2
+- **Precondition:** an alarm in state `active` exists
 - **Trigger:** user clicks "Acknowledge" in the dashboard
 - **Main flow:**
-  1. Frontend calls `POST /api/alarm/:id/acknowledge` with the alarm ID and a note
-  2. Cloud changes alarm state to `acknowledged`, writes who/when, returns the updated alarm
-- **Alternative:** alarm already acknowledged → `INVALID_STATE`
-- **Result:** alarm is marked resolved with audit trail
+  1. Frontend calls `alarm/acknowledge` with the alarm ID and an optional note
+  2. Backend changes alarm state to `acknowledged`, records `acknowledgedBy` and the time
+- **Alternative:** alarm not in `active` state → `invalidAlarmState`
+- **Result:** alarm is recorded as acknowledged with audit trail
 
-### UC-006: Configure thresholds and rules
+### UC-006: List alarms
 
-- **Actor:** A2 (IT Administrator) or A1 (Security Operator)
-- **Trigger:** user changes acceleration threshold or IDS rules in `/settings/gateway/:id`
+- **Actors:** A1, A2, A3
+- **Trigger:** user opens `/alarms` or filters dashboard
 - **Main flow:**
-  1. Frontend calls `PATCH /api/gateway/:id/config` with the new values
-  2. Cloud validates ranges with Zod, stores the configuration, bumps `configVersion`, writes audit log
-  3. Gateway calls `GET /api/gateway/:id/config` on its next 5-min poll, reads new values, applies them in Node-RED without a restart
-- **Alternative:** threshold out of allowed range → `INVALID_THRESHOLD`
-- **Result:** new configuration is active on the gateway within 5 min
+  1. Frontend calls `alarm/list` with filter (status, alarmType, date range) and pagination
+  2. Backend returns the matching items and page info
+- **Result:** user sees the filtered alarm list
 
-### UC-007: Notify security operator
+### UC-007: View device list and status
 
-- **Actors:** A5 (cloud), A1
-- **Trigger:** UC-003 (alarm created)
+- **Actors:** A1, A2
+- **Trigger:** user opens `/devices` or `/status`
 - **Main flow:**
-  1. The dashboard polls `GET /api/alarm?state=unresolved` every 5 s
-  2. New alarms appear in the alarm list and the unresolved KPI tile
-  3. A toast surfaces from the polling delta (client-side comparison of last-known IDs)
-- **Out of scope for MVP:** push notifications via email, SMS, or external channels (Slack, Teams). The polling mechanism inside the dashboard is the only real-time channel for MVP.
-- **Result:** operator sees the alarm within 5 s of cloud ingestion
+  1. Frontend calls `device/list` (devices with current status, lastSeen, location)
+  2. Frontend calls `event/list` for recent activity per device
+- **Result:** operator sees device health and recent activity
 
-### UC-008: Arm / disarm the system
+### UC-008: Service device (battery, placement, sensor reconfig)
 
-- **Actor:** A1, A4 (cloud-side); A4 via kill switch (gateway-side, iter 2)
-- **Trigger:** state toggle in the UI, or kill switch press
+- **Actor:** A4 (Service Technician, authenticates as `ADMIN`)
+- **Precondition:** device is registered and visible in the dashboard
+- **Trigger:** scheduled maintenance, low battery indicator, missed heartbeats
 - **Main flow:**
-  1. UI calls `PATCH /api/gateway/:id/armed-state` with `armed | disarmed`
-  2. Cloud stores the requested state, bumps `configVersion`, writes audit log
-  3. Gateway pulls the new state on its next config poll (5-min cadence) and applies it locally
-  4. The Node-RED flow short-circuits the alarm branch when `armedState === 'disarmed'`: it persists the event to local Mongo for audit but **does not** forward to the cloud
-- **Result:** gateway either reacts to alarms or stays silent
+  1. Technician opens `/devices/:id` in the web app, reviews `batteryVoltage`, `lastSeen`, alarm history
+  2. Technician performs the physical task (battery replacement, relocation, sensor calibration)
+  3. After service the device sends `device/heartbeat` and an optional `device/update` to refresh location
+- **Result:** device returns to `online`, history is preserved
 
-### UC-009 (iteration 2): Detect compromised IoT device
+### UC-009 (iteration 2): Detect compromised IoT device on the subnet
 
-- **Actors:** A2, gateway IDS
-- **Trigger:** Suricata on the gateway detects a suspicious traffic pattern
+- **Actor:** A5 (Gateway IDS), A1
+- **Trigger:** Suricata signature hit on the IoT subnet
 - **Main flow:**
-  1. Suricata writes the event to `/var/log/suricata/eve.json`
-  2. Node-RED parses the line and applies local rules
-  3. Gateway calls `POST /api/security-event` to the cloud (audit only)
-  4. Cloud stores the event in the `securityEvent` collection
-- **Result:** audit record, optionally an automatic action (UC-010)
+  1. Suricata writes the event to `eve.json`; the gateway parses it
+  2. Gateway calls `event/create` with `eventType: "networkAnomaly"` and severity from the signature
+  3. Backend persists the event; alarm rules may create an `alarm` of type `technical`
+- **Result:** audit record, optionally an automatic firewall action (UC-010)
 
-### UC-010 (iteration 2): Lock down IoT subnet
+### UC-010 (iteration 2): Lock down compromised host or subnet
 
-- **Actor:** A1 (manual via dashboard or via kill switch) or gateway (autonomous)
+- **Actor:** A1 (manual via dashboard) or A5 (Gateway autonomously) or A3 (kill switch)
 - **Trigger:** UC-009 outcome, manual UI action, or kill switch hold
 - **Main flow:**
   1. Gateway inserts an iptables rule at the top of the FORWARD chain to block the host or subnet
-  2. Gateway calls `POST /api/firewall/rule` to the cloud (audit only)
-  3. State is visible in the dashboard
-- **Result:** the compromised device is disconnected from the network
+  2. Gateway calls `firewall/applyRule` with `target`, `action`, `reason`, `triggeredBy`
+  3. Backend persists the rule for audit and dashboard visibility
+- **Result:** the compromised device is disconnected; rule is auditable
 
 ## Main business requirements
 
-### BR1: Tamper detection
-
-The system must classify acceleration above the threshold as an alarm and forward it with priority, outside the aggregation window.
-
-### BR2: Environmental monitoring
-
-The system must measure temperature at least once per minute and store an aggregate.
-
-### BR3: Reduced cloud data volume
-
-Standard telemetry going to the cloud is aggregated. The gateway computes a moving average over a 5-sample window and sends one aggregated record per window (one upload per ~5 minutes for the default 60 s sample interval). Full resolution stays local in the gateway's MongoDB.
-
-### BR4: Local data availability
-
-The gateway persists everything to local MongoDB. A cloud outage must not cause data loss; failed uploads queue in the gateway's `outbox` collection and retry with backoff.
-
-### BR5: Cloud integration readiness
-
-The data model uses shared Zod schemas across gateway, backend Route Handlers, and frontend forms. Field names are consistent end-to-end with no per-layer renaming.
-
-### BR6 (iteration 2): Privacy-by-design IDS
-
-Packet inspection and decision logic run on the gateway only. The cloud receives aggregated security events without packet payloads.
-
-### BR7 (iteration 2): Manual kill switch
-
-The physical button on the gateway must apply the lockdown without any dependency on the cloud or the network.
+| ID  | Requirement                                                                                  |
+| --- | -------------------------------------------------------------------------------------------- |
+| BR1 | Detect tamper events on the sensor node and forward them with priority outside the standard sample interval. |
+| BR2 | Measure environmental telemetry (temperature) at least once per minute and persist an aggregate. |
+| BR3 | Reduce cloud data volume by aggregating standard telemetry on the gateway (moving average, one upload per window of N samples). |
+| BR4 | Persist all events locally on the gateway so that a cloud outage does not cause data loss.    |
+| BR5 | Use one shared schema vocabulary across node, gateway, and cloud (no field renaming between layers). |
+| BR6 | (iter 2) Run packet inspection and decision logic on the gateway (privacy-by-design); the cloud receives aggregated security events only. |
+| BR7 | (iter 2) Provide a physical kill switch that applies a network lockdown without depending on the cloud. |
 
 ## Out of scope
 
 - multi-tenant isolation beyond per-deployment scoping
-- push notification channels (email, SMS, Slack, Teams) in MVP
-- advanced analytics (ML anomaly detection)
+- email / SMS / push notification channels in MVP
+- ML-based anomaly detection
 - OTA firmware updates
-- failover between multiple gateways
+- multi-gateway failover
 
 ## Non-functional requirements
 
-- **NFR1 (clarity):** firmware and flow logic stay modular, one module per responsibility
-- **NFR2 (deployment):** local Raspberry Pi 4 deployment in under 30 minutes per the deployment guide; cloud deployment from `git push` to live URL on Vercel in under 5 minutes
-- **NFR3 (audit):** every alarm acknowledgement, config change, armed-state change, and security event has an audit record (who, when, what)
-- **NFR4 (extensibility):** the data model allows new sensors without breaking changes
-- **NFR5 (alarm latency):** an alarm reaches the cloud within 5 seconds of threshold breach; the dashboard surfaces it within 5 seconds via polling. End-to-end target: 10 seconds worst case
-- **NFR6 (resilience):** a cloud outage of up to 24 hours must not cause data loss (gateway outbox retention)
+| ID    | Requirement                                                                                  |
+| ----- | -------------------------------------------------------------------------------------------- |
+| NFR1  | Modular firmware and Node-RED flow; one module per responsibility.                           |
+| NFR2  | Local Pi deployment under 30 min per the deployment guide; cloud deploy under 5 min on Vercel. |
+| NFR3  | Audit log for every alarm acknowledgement, configuration change, registration token issuance, and role change. |
+| NFR4  | Sensor and event model is extensible (new sensor types and event types without breaking changes). |
+| NFR5  | Alarm reaches the cloud within 5 s of detection; the dashboard surfaces it within 5 s via polling. End-to-end target: 10 s worst case. |
+| NFR6  | A cloud outage of up to 24 h must not cause data loss (gateway outbox retention).            |
 
 ## Success metrics
 
-- alarm is processed without waiting for the aggregation interval (verified by end-to-end test)
-- standard telemetry reaches the cloud aggregated; one record per 5-sample window instead of one per sample
-- a 1-hour cloud outage during testing causes no data loss
-- the data model is consistent across all layers (verified by Zod schema validation)
-- the gateway survives a reboot and restores the armed/disarmed state from stored configuration
+- alarm processed without waiting for the standard aggregation interval (verified end-to-end)
+- standard telemetry forwarded in aggregated form
+- 1-hour cloud outage during testing causes no data loss
+- data model consistent across all layers (verified by Zod schema validation)
+- gateway survives reboot and restores its registered state from local storage
 
-## User stories (selection for week 5 grading)
+## User stories
 
-- **US-01:** As a security operator I want to see the current state of all gateways on one screen so I can spot an outage without waiting for an alarm.
-- **US-02:** As an IT administrator I want to set the acceleration threshold per gateway because different rooms have different background vibration.
-- **US-03:** As a security operator I want to acknowledge an alarm with a note so the audit trail records the decision.
-- **US-04:** As a homeowner I want to switch the system to disarmed in one click so I don't get notifications during maintenance.
-- **US-05:** As a service technician I want the gateway itself to show that it receives node data so I don't have to open the cloud app on site.
-- **US-06:** As a security operator I want to see new alarms in the dashboard within 5 seconds so I can react before damage occurs.
-- **US-07 (iter. 2):** As an IT administrator I want a view of which IoT device in the subnet is communicating abnormally so I can decide on a lockdown.
-- **US-08 (iter. 2):** As a homeowner I want a single button press to disconnect all IoT devices from the internet when I suspect an attack.
+- **US-01:** As an Administrator I want to register a new device with a one-time token so that only authorized devices can submit data.
+- **US-02:** As an Operator I want to see active alarms on one screen so I can react quickly.
+- **US-03:** As an Operator I want to acknowledge an alarm with a note so the audit trail records the decision.
+- **US-04:** As a User I want to view the current state of all devices so I know the system is running.
+- **US-05:** As an Administrator I want to set the alarm threshold per sensor so different rooms can have different sensitivity.
+- **US-06:** As a Service Technician I want to see device battery and lastSeen so I can plan maintenance.
+- **US-07 (iter. 2):** As an Administrator I want a view of which IoT subnet device is communicating abnormally so I can decide on lockdown.
+- **US-08 (iter. 2):** As a User I want a single button press to disconnect IoT devices from the internet when I suspect an attack.
 
-## Use case → REST endpoint mapping
+## Use case → backend command mapping
 
-| UC      | Endpoint                                    | Method | Auth          |
-| ------- | ------------------------------------------- | ------ | ------------- |
-| UC-001  | `/api/gateway/register`                     | POST   | token         |
-| UC-002  | `/api/telemetry`                            | POST   | HMAC          |
-| UC-003  | `/api/alarm`                                | POST   | HMAC          |
-| UC-004  | `/api/gateway`                              | GET    | session       |
-| UC-004  | `/api/gateway/:id`                          | GET    | session       |
-| UC-004  | `/api/telemetry`                            | GET    | session       |
-| UC-004  | `/api/alarm`                                | GET    | session       |
-| UC-005  | `/api/alarm/:id/acknowledge`                | POST   | session+role  |
-| UC-006  | `/api/gateway/:id/config`                   | GET    | HMAC          |
-| UC-006  | `/api/gateway/:id/config`                   | PATCH  | session+role  |
-| UC-007  | (polling on `GET /api/alarm`)               | —      | session       |
-| UC-008  | `/api/gateway/:id/armed-state`              | PATCH  | session+role  |
-| UC-009  | `/api/security-event`                       | POST   | HMAC          |
-| UC-010  | `/api/firewall/rule`                        | POST   | HMAC          |
+| UC      | Command                  | HTTP Method | Profiles                     |
+| ------- | ------------------------ | ----------- | ---------------------------- |
+| UC-001  | `device/register`        | POST        | `ADMIN`, `DEVICE`            |
+| UC-002  | `device/heartbeat`       | POST        | `DEVICE`                     |
+| UC-003  | `event/create`           | POST        | `DEVICE`                     |
+| UC-004  | `dashboard/getOverview`  | GET         | `ADMIN`, `OPERATOR`, `USER`  |
+| UC-005  | `alarm/acknowledge`      | POST        | `ADMIN`, `OPERATOR`          |
+| UC-006  | `alarm/list`             | GET         | `ADMIN`, `OPERATOR`, `USER`  |
+| UC-007  | `device/list`            | GET         | `ADMIN`, `OPERATOR`          |
+| UC-007  | `event/list`             | GET         | `ADMIN`, `OPERATOR`, `USER`  |
+| UC-008  | `device/update`          | POST        | `ADMIN`                      |
+| UC-009  | `event/create`           | POST        | `DEVICE`                     |
+| UC-010  | `firewall/applyRule`     | POST        | `DEVICE`                     |
 
 Detailed request/response schemas are in [backend_design.md](backend_design.md).
