@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { auth, signOut } from "@/lib/auth";
-import { Button } from "@/components/ui/button";
+import { auth } from "@/lib/auth";
+import { SignOutButton } from "@/components/SignOutButton";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
@@ -12,11 +12,6 @@ const NAV = [
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
-
-  async function handleSignOut() {
-    "use server";
-    await signOut({ redirectTo: "/login" });
-  }
 
   return (
     <div className="min-h-screen">
@@ -36,11 +31,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <span className="text-sm text-muted-foreground">
               {session.user.name} ({session.user.role})
             </span>
-            <form action={handleSignOut}>
-              <Button type="submit" variant="outline" size="sm">
-                Sign out
-              </Button>
-            </form>
+            <SignOutButton />
           </div>
         </div>
       </header>

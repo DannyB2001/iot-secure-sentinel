@@ -1,4 +1,5 @@
-import NextAuth from "next-auth";
+import type { NextAuthOptions } from "next-auth";
+import { getServerSession } from "next-auth/next";
 import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
 import { connectDb } from "./db";
@@ -11,7 +12,7 @@ const credentialsSchema = z.object({
   password: z.string().min(1),
 });
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
   providers: [
@@ -43,17 +44,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.role = user.role ?? "USER";
-        token.uid = user.id;
+        token.role = (user as { role?: AppRole }).role ?? "USER";
+        token.uid = (user as { id?: string }).id;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.id = token.uid ?? session.user.id;
-        session.user.role = token.role ?? "USER";
+        session.user.id = (token.uid as string) ?? session.user.id;
+        session.user.role = (token.role as AppRole) ?? "USER";
       }
       return session;
     },
   },
-});
+};
+
+export function auth() {
+  return getServerSession(authOptions);
+}

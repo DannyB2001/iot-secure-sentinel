@@ -3,14 +3,14 @@ import { getToken } from "next-auth/jwt";
 
 const PROTECTED_PREFIXES = ["/dashboard", "/devices", "/alarms"];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isProtected = PROTECTED_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   if (!isProtected) return NextResponse.next();
 
   const token = await getToken({
     req: request,
-    secret: process.env.AUTH_SECRET,
+    secret: process.env.NEXTAUTH_SECRET,
     secureCookie: process.env.NODE_ENV === "production",
   });
   if (!token) {

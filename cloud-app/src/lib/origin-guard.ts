@@ -10,7 +10,7 @@ export function isSameOrigin(req: NextRequest): boolean {
   const origin = req.headers.get("origin");
   if (!origin) return false;
 
-  const expected = process.env.AUTH_URL ?? `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+  const expected = process.env.NEXTAUTH_URL ?? `${req.nextUrl.protocol}//${req.nextUrl.host}`;
   try {
     const a = new URL(origin);
     const b = new URL(expected);

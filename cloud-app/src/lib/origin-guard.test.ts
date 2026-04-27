@@ -12,17 +12,17 @@ function fakeRequest(origin: string | null, host = "localhost:3000", protocol = 
 }
 
 describe("isSameOrigin", () => {
-  const originalAuthUrl = process.env.AUTH_URL;
+  const originalAuthUrl = process.env.NEXTAUTH_URL;
 
   beforeEach(() => {
-    delete process.env.AUTH_URL;
+    delete process.env.NEXTAUTH_URL;
   });
 
   afterEach(() => {
     if (originalAuthUrl === undefined) {
-      delete process.env.AUTH_URL;
+      delete process.env.NEXTAUTH_URL;
     } else {
-      process.env.AUTH_URL = originalAuthUrl;
+      process.env.NEXTAUTH_URL = originalAuthUrl;
     }
   });
 
@@ -30,7 +30,7 @@ describe("isSameOrigin", () => {
     expect(isSameOrigin(fakeRequest(null))).toBe(false);
   });
 
-  it("accepts matching origin in dev (no AUTH_URL set)", () => {
+  it("accepts matching origin in dev (no NEXTAUTH_URL set)", () => {
     expect(isSameOrigin(fakeRequest("http://localhost:3000"))).toBe(true);
   });
 
@@ -42,15 +42,15 @@ describe("isSameOrigin", () => {
     expect(isSameOrigin(fakeRequest("https://localhost:3000"))).toBe(false);
   });
 
-  it("accepts matching AUTH_URL in production", () => {
-    process.env.AUTH_URL = "https://iris.example.com";
+  it("accepts matching NEXTAUTH_URL in production", () => {
+    process.env.NEXTAUTH_URL = "https://iris.example.com";
     expect(
       isSameOrigin(fakeRequest("https://iris.example.com", "iris.example.com", "https:")),
     ).toBe(true);
   });
 
-  it("rejects when Origin matches request host but AUTH_URL points elsewhere", () => {
-    process.env.AUTH_URL = "https://iris.example.com";
+  it("rejects when Origin matches request host but NEXTAUTH_URL points elsewhere", () => {
+    process.env.NEXTAUTH_URL = "https://iris.example.com";
     expect(isSameOrigin(fakeRequest("http://localhost:3000"))).toBe(false);
   });
 
