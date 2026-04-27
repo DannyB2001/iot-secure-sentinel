@@ -1,32 +1,50 @@
 @import "tailwindcss";
 
 @theme {
-  --color-border: hsl(214 32% 91%);
-  --color-input: hsl(214 32% 91%);
-  --color-ring: hsl(222 84% 5%);
-  --color-background: hsl(0 0% 100%);
-  --color-foreground: hsl(222 84% 5%);
+  /* Iris brand: deep violet primary, neutral cool surface, distinctive accent */
+  --color-background: hsl(255 25% 98%);
+  --color-foreground: hsl(255 25% 12%);
 
-  --color-primary: hsl(222 47% 11%);
-  --color-primary-foreground: hsl(210 40% 98%);
+  --color-border: hsl(255 20% 90%);
+  --color-input: hsl(255 20% 90%);
+  --color-ring: hsl(263 70% 50%);
 
-  --color-secondary: hsl(210 40% 96%);
-  --color-secondary-foreground: hsl(222 47% 11%);
+  --color-primary: hsl(263 70% 50%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-primary-soft: hsl(263 80% 96%);
 
-  --color-muted: hsl(210 40% 96%);
-  --color-muted-foreground: hsl(215 16% 47%);
+  --color-secondary: hsl(255 25% 94%);
+  --color-secondary-foreground: hsl(255 25% 18%);
 
-  --color-destructive: hsl(0 84% 60%);
-  --color-destructive-foreground: hsl(210 40% 98%);
+  --color-muted: hsl(255 20% 95%);
+  --color-muted-foreground: hsl(255 12% 45%);
 
-  --color-warning: hsl(38 92% 50%);
-  --color-warning-foreground: hsl(222 47% 11%);
+  --color-destructive: hsl(0 75% 55%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-destructive-soft: hsl(0 80% 96%);
 
-  --color-success: hsl(142 71% 45%);
-  --color-success-foreground: hsl(210 40% 98%);
+  --color-warning: hsl(32 95% 50%);
+  --color-warning-foreground: hsl(255 25% 12%);
+  --color-warning-soft: hsl(38 95% 95%);
+
+  --color-success: hsl(150 65% 40%);
+  --color-success-foreground: hsl(0 0% 100%);
+  --color-success-soft: hsl(150 60% 94%);
+
+  --color-info: hsl(214 90% 50%);
+  --color-info-foreground: hsl(0 0% 100%);
+  --color-info-soft: hsl(214 90% 96%);
 
   --color-card: hsl(0 0% 100%);
-  --color-card-foreground: hsl(222 84% 5%);
+  --color-card-foreground: hsl(255 25% 12%);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius-sm: 0.375rem;
+  --radius: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.125rem;
 }
 
 html,
@@ -35,7 +53,29 @@ body {
 }
 
 body {
-  background-color: hsl(210 40% 98%);
-  color: hsl(222 84% 5%);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Subtle iris gradient mesh used on the auth screen */
+.iris-mesh {
+  background:
+    radial-gradient(at 20% 20%, hsl(263 90% 60% / 0.35) 0px, transparent 50%),
+    radial-gradient(at 80% 0%, hsl(290 85% 60% / 0.25) 0px, transparent 55%),
+    radial-gradient(at 0% 100%, hsl(220 90% 55% / 0.30) 0px, transparent 50%),
+    radial-gradient(at 80% 80%, hsl(263 70% 30% / 0.40) 0px, transparent 60%),
+    linear-gradient(135deg, hsl(263 50% 18%) 0%, hsl(255 50% 10%) 100%);
+}
+
+/* Animated pulse for live polling indicator */
+@keyframes iris-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.animate-pulse-soft {
+  animation: iris-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }

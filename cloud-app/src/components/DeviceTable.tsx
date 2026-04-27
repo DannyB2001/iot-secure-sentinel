@@ -1,7 +1,11 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Badge } from "@/components/ui/badge";
+import { BatteryLow, Cpu, Router, ServerCrash } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
+import { RelativeTime } from "@/components/RelativeTime";
+import { StatusDot } from "@/components/StatusDot";
+import { THRESHOLDS } from "@/services/alarm-classifier";
 
 type DeviceRow = {
   id: string;
@@ -14,11 +18,7 @@ type DeviceRow = {
   batteryVoltage: number | null;
 };
 
-const STATUS_TONE: Record<DeviceRow["status"], "success" | "warning" | "muted"> = {
-  online: "success",
-  warning: "warning",
-  offline: "muted",
-};
+const NO_VALUE = "-";
 
 async function fetchDevices(): Promise<DeviceRow[]> {
   const res = await fetch("/api/device/list", { cache: "no-store" });
@@ -34,46 +34,126 @@ export function DeviceTable() {
     refetchInterval: 10000,
   });
 
-  if (query.isLoading) return <p className="text-sm text-muted-foreground">Loading devices...</p>;
-  if (query.isError) return <p className="text-sm text-destructive">Failed to load devices.</p>;
+  if (query.isLoading) return <DevicesSkeleton />;
+  if (query.isError) {
+    return (
+      <EmptyState
+        icon={ServerCrash}
+        tone="destructive"
+        title="Cannot reach the device list"
+        description="Check the gateway and cloud connectivity, then refresh."
+      />
+    );
+  }
 
   const items = query.data ?? [];
   if (items.length === 0) {
-    return <p className="text-sm text-muted-foreground">No devices registered.</p>;
+    return (
+      <EmptyState
+        icon={Cpu}
+        title="No devices registered yet."
+        description="Once a gateway or sensor node registers, it will appear here."
+      />
+    );
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
       <table className="w-full text-sm">
-        <thead className="bg-secondary text-left text-xs uppercase text-muted-foreground">
+        <thead className="border-b border-border bg-secondary/40 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <tr>
-            <th className="px-4 py-2">Name</th>
-            <th className="px-4 py-2">Type</th>
-            <th className="px-4 py-2">Status</th>
-            <th className="px-4 py-2">Location</th>
-            <th className="px-4 py-2">Battery</th>
-            <th className="px-4 py-2">Last seen</th>
+            <th className="px-6 py-3">Device</th>
+            <th className="px-6 py-3">Status</th>
+            <th className="px-6 py-3">Location</th>
+            <th className="px-6 py-3">Battery</th>
+            <th className="px-6 py-3">Firmware</th>
+            <th className="px-6 py-3">Last seen</th>
           </tr>
         </thead>
         <tbody>
-          {items.map((device) => (
-            <tr key={device.id} className="border-t border-border">
-              <td className="px-4 py-2 font-medium">{device.name}</td>
-              <td className="px-4 py-2">{device.type}</td>
-              <td className="px-4 py-2">
-                <Badge tone={STATUS_TONE[device.status]}>{device.status}</Badge>
-              </td>
-              <td className="px-4 py-2">{device.location ?? "-"}</td>
-              <td className="px-4 py-2">
-                {device.batteryVoltage !== null ? `${device.batteryVoltage.toFixed(2)} V` : "-"}
-              </td>
-              <td className="px-4 py-2 text-xs text-muted-foreground">
-                {device.lastSeen ? new Date(device.lastSeen).toLocaleString() : "never"}
-              </td>
-            </tr>
-          ))}
+          {items.map((device) => {
+            const Icon = device.type === "gateway" ? Router : Cpu;
+            const lowBattery =
+              device.batteryVoltage !== null && device.batteryVoltage <= THRESHOLDS.batteryWarn;
+            return (
+              <tr
+                key={device.id}
+                className="border-t border-border transition-colors first:border-t-0 hover:bg-secondary/40"
+              >
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-soft text-primary">
+                      <Icon className="h-4 w-4" aria-hidden="true" />
+                    </span>
+                    <div>
+                      <div className="font-medium">{device.name}</div>
+                      <div className="text-xs capitalize text-muted-foreground">
+                        {device.type === "iotNode" ? "IoT node" : "Gateway"}
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <StatusDot status={device.status} />
+                </td>
+                <td className="px-6 py-4 text-muted-foreground">{device.location ?? NO_VALUE}</td>
+                <td className="px-6 py-4 tabular-nums">
+                  {device.batteryVoltage !== null ? (
+                    <span
+                      className={
+                        lowBattery
+                          ? "inline-flex items-center gap-1 text-warning"
+                          : "text-foreground"
+                      }
+                    >
+                      {lowBattery ? <BatteryLow className="h-4 w-4" aria-hidden="true" /> : null}
+                      {device.batteryVoltage.toFixed(2)} V
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">{NO_VALUE}</span>
+                  )}
+                </td>
+                <td className="px-6 py-4 font-mono text-xs text-muted-foreground">
+                  {device.firmwareVersion ?? NO_VALUE}
+                </td>
+                <td className="px-6 py-4 text-xs text-muted-foreground">
+                  {device.lastSeen ? <RelativeTime date={device.lastSeen} /> : "never"}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function DevicesSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="px-6 py-3">
+        <div className="grid grid-cols-6 gap-4 border-b border-border pb-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-3 animate-pulse rounded bg-muted" />
+          ))}
+        </div>
+      </div>
+      <div className="space-y-3 p-6">
+        {Array.from({ length: 4 }).map((_, row) => (
+          <div key={row} className="grid grid-cols-6 items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 animate-pulse rounded-lg bg-muted" />
+              <div className="space-y-1.5">
+                <div className="h-3 w-24 animate-pulse rounded bg-muted" />
+                <div className="h-2 w-12 animate-pulse rounded bg-muted" />
+              </div>
+            </div>
+            {Array.from({ length: 5 }).map((_, col) => (
+              <div key={col} className="h-3 animate-pulse rounded bg-muted" />
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
