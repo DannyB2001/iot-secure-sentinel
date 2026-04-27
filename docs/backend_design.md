@@ -4,6 +4,27 @@
 
 This document defines the cloud backend for Iris Gateway: REST endpoints (named after the uuApp commands in the team's submission), request and response schemas, the Mongoose persistence model, validation, authorization, and error responses. It is the source of truth for backend implementation. Use case IDs (UC-XXX) reference [business_requests.md](business_requests.md).
 
+## Implementation status
+
+The full command surface below describes the target design across both project iterations. The current `cloud-app/` implementation ships an MVP slice for iteration 1 (tamper detection + temperature). The MVP intentionally uses a simplified vocabulary so the demo can run end-to-end without real HARDWARIO hardware:
+
+| Concern             | Spec (full design)                                                                       | MVP (cloud-app/ today)                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Implemented commands| 15 (see endpoint catalog)                                                                | 4: `event/create`, `device/list`, `alarm/list`, `alarm/acknowledge`                       |
+| Event identifier    | Mongo `deviceId` ObjectId + `sensorId` ObjectId                                          | `deviceName` (matches `Device.name`) + `sensorKey` (logical channel string)               |
+| Event `type` enum   | `motionDetected | doorOpened | smokeDetected | temperatureExceeded | tamperDetected | networkAnomaly` | `temperature | tamper | heartbeat | battery`                                              |
+| Alarm taxonomy      | `alarmType: intrusion | fire | technical | tamper`, `status: active | acknowledged | resolved | falseAlarm` | `category: temperature | tamper | battery | offline`, `state: open | acknowledged | resolved`, `severity: info | warning | critical` |
+| Severity origin     | sent in `event/create` body                                                              | derived server-side by the alarm classifier (see `cloud-app/src/services/alarm-classifier.ts`) |
+| Error envelope      | `{ error: { code, message, params } }`                                                   | `{ uuAppErrorMap: { <code>: { type, message, params } } }` (uuApp convention)             |
+| `acknowledge` error | `invalidAlarmState` (HTTP 400)                                                           | `invalidAlarmState` (HTTP 400) — aligned                                                  |
+| `acknowledge` body  | `{ alarmId, note? }` -> `{ id, status, acknowledgedBy, acknowledgedAt }`                  | `{ alarmId, note? }` -> `{ id, state, acknowledgedAt, acknowledgedBy }`                    |
+| Device auth         | bearer token, SHA-256 hashed, lookup-by-hash via Mongo                                   | bearer token, SHA-256 hashed, lookup-by-hash via Mongo (no plaintext storage)             |
+| Sensor collection   | separate `Sensor` documents                                                              | not implemented; `sensorKey` is a free-form string on `Event`                             |
+| TTL on events       | 90 days                                                                                  | not configured (in-memory dev only; Atlas migration step adds TTL)                        |
+| Tests               | full unit + integration                                                                  | 46 unit tests for pure helpers and validators (vitest)                                    |
+
+The MVP vocabulary is the concrete contract for graded backend implementation. Iteration 2 widens the spec to the full design when the Sensor collection, registration tokens, and the IDS pipeline come online.
+
 ## Technology
 
 - **Runtime:** Node.js 22 LTS (Bun 1.2+ in development)
@@ -125,6 +146,8 @@ cloud-app/
 ```
 
 ## Data model (Mongoose schemas)
+
+> **MVP override**: the schemas below describe the full design across both iterations. The MVP implementation in `cloud-app/src/models/` ships a simplified subset documented in the Implementation status table at the top of this file (and aligned with the wire shapes in [api_contract.md](api_contract.md) section 5.3). When the table and the schemas below disagree, the table is authoritative for what is currently in the codebase.
 
 ### `device`
 
@@ -449,6 +472,8 @@ export const RegisterSensorInput = z.object({
 
 ### `event/create` — `POST /api/event/create` (UC-003)
 
+> **MVP override**: the implementation in `cloud-app/src/app/api/event/create/route.ts` uses the simplified MVP vocabulary (`deviceName`/`sensorKey`/`type` enum of `temperature|tamper|heartbeat|battery`), no `severity` in the request body (severity is derived server-side by the alarm classifier), and the response shape `{ eventId, alarmId, duplicate }`. See [api_contract.md](api_contract.md) section 5.3 for the wire-level MVP contract. The schema and algorithm below describe the full iteration-2 design.
+
 **Profiles:** `DEVICE` (bearer token).
 
 **Request schema:**
@@ -558,34 +583,37 @@ export const CreateEventInput = z.object({
 
 ### `alarm/acknowledge` — `POST /api/alarm/acknowledge` (UC-005)
 
+> **MVP override**: the implementation in `cloud-app/src/app/api/alarm/acknowledge/route.ts` is aligned with this section, with two naming differences: the field is `state` (not `status`) and the open value is `"open"` (not `"active"`). The MVP also enforces a same-origin check (`src/lib/origin-guard.ts`) before auth, returning `forbidden` (403) for cross-origin POSTs. The dtoIn (`{ alarmId, note? }`) and dtoOut (`{ id, state, acknowledgedAt, acknowledgedBy }`) shapes match.
+
 **Profiles:** `ADMIN`, `OPERATOR`.
 
 **Request schema:**
 ```ts
 export const AcknowledgeAlarmInput = z.object({
   alarmId: z.string(),
-  note: z.string().min(3).max(500).optional(),
+  note: z.string().min(1).max(500).optional(),
 });
 ```
 
 **Algorithm:**
-1. Validate `dtoIn`.
-2. Verify alarm exists; if not → `alarmNotFound`.
-3. Verify alarm status is `active`; if not → `invalidAlarmState`.
-4. Update status to `acknowledged`, store `acknowledgedBy`, `acknowledgedAt`, `acknowledgeNote`.
-5. Write `auditLog`.
+1. Reject cross-origin POST (`forbidden` 403).
+2. Validate `dtoIn`.
+3. Verify alarm exists; if not → `alarmNotFound`.
+4. Verify alarm `state` is `open` (MVP) / `active` (iteration 2); if not → `invalidAlarmState` (HTTP 400).
+5. Update state to `acknowledged`, store `acknowledgedBy`, `acknowledgedAt`, `acknowledgeNote`.
+6. Write `auditLog` (iteration 2; MVP omits the audit log).
 
 **Response 200:**
 ```json
 {
   "id": "651f6d...",
-  "status": "acknowledged",
+  "state": "acknowledged",
   "acknowledgedBy": "651e1a...",
   "acknowledgedAt": "2026-04-19T08:35:11Z"
 }
 ```
 
-**Errors:** `invalidDtoIn`, `unsupportedKeys`, `alarmNotFound`, `invalidAlarmState`, `forbidden`.
+**Errors:** `invalidDtoIn`, `unsupportedKeys`, `unauthorized`, `forbidden`, `alarmNotFound`, `invalidAlarmState`.
 
 ---
 
@@ -685,13 +713,13 @@ Devices send:
 Authorization: Bearer dt_5f7a9c1e...
 ```
 
-The middleware:
+The middleware (`cloud-app/src/lib/device-auth.ts`):
 1. Extracts the token, computes SHA-256.
-2. Looks up `device.apiTokenHash`; constant-time compare via `crypto.timingSafeEqual`.
-3. If match, attaches `req.device` and assigns `DEVICE` role for authorization.
-4. Updates `device.lastSeen` (debounced — no more than once per 30 s per device).
+2. Looks up `device.apiTokenHash` via Mongo `findOne`; the SHA-256 hash collapses any input-length timing differences below network jitter, and the indexed lookup is near-constant-time.
+3. If match, returns the device document; the route handler then assigns `DEVICE`-role behavior for authorization.
+4. Updates `device.lastSeen` (debounced; the MVP updates it on every event/create call).
 
-The token is issued once at `device/register` and stored only as SHA-256 hash. Loss requires re-registration.
+The token is issued once at `device/register` and stored only as SHA-256 hash. Loss requires re-registration. (`device/register` itself is iteration 2; the MVP seeds a mock gateway with a known token at first boot via `cloud-app/src/lib/seed.ts`.)
 
 ### Authorization (role matrix)
 
@@ -716,41 +744,47 @@ Reusable `requireProfile(...profiles)` helper guards each Route Handler.
 
 ## Error envelope
 
+The MVP and the iteration-2 design both use the uuApp `uuAppErrorMap` shape (single source of truth: `cloud-app/src/lib/error-envelope.ts`, mirrored in [api_contract.md](api_contract.md) section 8):
+
 ```json
 {
-  "error": {
-    "code": "invalidDtoIn",
-    "message": "DtoIn is not valid.",
-    "params": {
-      "invalidTypeKeyMap": { "severity": "expected enum, got string" },
-      "invalidValueKeyMap": {},
-      "missingKeyMap": { "deviceId": "required" }
+  "uuAppErrorMap": {
+    "invalidDtoIn": {
+      "type": "error",
+      "message": "Request payload is invalid.",
+      "params": {
+        "issues": [
+          { "code": "invalid_type", "path": ["type"], "message": "expected enum" }
+        ]
+      }
     }
   }
 }
 ```
 
-Successful responses may include warnings:
+Successful responses may include warnings under the same map:
 ```json
 {
-  "device": { ... },
-  "warning": { "code": "unsupportedKeys", "params": { "unsupportedKeyList": ["legacyField"] } }
+  "device": { "...": "..." },
+  "uuAppErrorMap": {
+    "unsupportedKeys": { "type": "warning", "message": "Unknown keys ignored.", "params": { "unsupportedKeyList": ["legacyField"] } }
+  }
 }
 ```
 
-| HTTP | Code                  | Meaning                                          |
-| ---- | --------------------- | ------------------------------------------------ |
-| 400  | `invalidDtoIn`        | Zod validation failed                            |
-| 400  | `invalidAlarmState`   | alarm not in `active` state                      |
-| 400  | `timestampInFuture`   | event timestamp more than 5 min ahead            |
-| 401  | `unauthorized`        | missing or invalid auth (session, token, cron)   |
-| 403  | `forbidden`           | role insufficient                                |
-| 404  | `deviceNotFound`      | unknown device ID                                |
-| 404  | `sensorNotFound`      | unknown sensor ID                                |
-| 404  | `alarmNotFound`       | unknown alarm ID                                 |
-| 409  | `deviceAlreadyExists` | device name taken                                |
-| 409  | `invalidToken`        | registration token expired or already consumed   |
-| 500  | `internalError`       | unexpected; details server-side only             |
+| HTTP | Code                  | MVP | Meaning                                          |
+| ---- | --------------------- | --- | ------------------------------------------------ |
+| 400  | `invalidDtoIn`        | yes | Zod validation failed                            |
+| 400  | `invalidAlarmState`   | yes | alarm not in `open` state (MVP) / `active` (iter 2) |
+| 400  | `timestampInFuture`   | yes | event timestamp more than 5 min ahead            |
+| 401  | `unauthorized`        | yes | missing or invalid auth (session, token, cron)   |
+| 403  | `forbidden`           | yes | role insufficient or cross-origin POST           |
+| 404  | `deviceNotFound`      | yes | unknown device                                    |
+| 404  | `sensorNotFound`      | iter 2 | unknown sensor                                   |
+| 404  | `alarmNotFound`       | yes | unknown alarm                                     |
+| 409  | `deviceAlreadyExists` | iter 2 | device name taken                                |
+| 409  | `invalidToken`        | iter 2 | registration token expired or already consumed   |
+| 500  | `internalError`       | yes (uncaught) | unexpected; details server-side only             |
 
 | Warning code        | Meaning                                       |
 | ------------------- | --------------------------------------------- |

@@ -135,9 +135,9 @@ Authorization: Bearer dt_5f7a9c1e3d4b6a8c0e2f4d6b8a0c2e4f6d8b0a2c
 Content-Type: application/json
 ```
 
-The API token is issued once by `device/register` and stored on the gateway at `/etc/iris-gateway/credentials.json`. The backend stores only its SHA-256 hash and compares with `crypto.timingSafeEqual`.
+The API token is issued once by `device/register` and stored on the gateway at `/etc/iris-gateway/credentials.json`. The backend stores only its SHA-256 hash. Verification is a Mongo `findOne({ apiTokenHash })` lookup; the index makes the lookup near-constant-time, and the hash collapses any input-length timing differences below the noise floor of network jitter (see `cloud-app/src/lib/device-auth.ts`).
 
-### 5.1 `POST /api/device/register`
+### 5.1 `POST /api/device/register` (iteration 2, not yet implemented in MVP)
 
 No token required (device has none yet); requires a registration token.
 
@@ -173,7 +173,7 @@ Response `201`:
 
 `apiToken` is returned exactly once.
 
-### 5.2 `POST /api/device/heartbeat`
+### 5.2 `POST /api/device/heartbeat` (iteration 2, not yet implemented in MVP)
 
 Request body:
 
@@ -196,39 +196,52 @@ Response `200`:
 
 ### 5.3 `POST /api/event/create`
 
+Iteration 1 / MVP shape (implemented in `cloud-app/`). Iteration 2 will add `eventType` per the original specification, plus `severity` from the request and `sensorId` once the Sensor collection exists.
+
 Request body:
 
 ```json
 {
-  "deviceId": "651f2a1b3c4d5e6f7a8b9c0d",
-  "sensorId": "651f2b2c3d4e5f6a7b8c9d0e",
-  "eventType": "tamperDetected",
-  "severity": "high",
+  "deviceName": "node-01",
+  "sensorKey": "core-thermometer",
+  "type": "tamper",
   "value": 1.94,
   "message": "Acceleration threshold exceeded",
   "timestamp": "2026-04-19T10:16:05Z"
 }
 ```
 
-`eventType` enum: `motionDetected`, `doorOpened`, `smokeDetected`, `temperatureExceeded`, `tamperDetected`, `networkAnomaly` (iter 2).
-`severity` enum: `low`, `medium`, `high`, `critical`.
+| Field        | Type    | Required | Notes                                                      |
+| ------------ | ------- | -------- | ---------------------------------------------------------- |
+| `deviceName` | string  | yes      | matches `Device.name`; the node-level identifier (e.g. `node-01`). The authenticated bearer token belongs to the gateway proxy, not the node. |
+| `sensorKey`  | string  | yes      | logical sensor channel on the device (`core-thermometer`, `core-accelerometer`, `core-battery`, `core-heartbeat`). |
+| `type`       | enum    | yes      | `temperature | tamper | heartbeat | battery`               |
+| `value`      | number  | no       | finite (Zod `.number().finite()`). Required for `temperature` and `battery` to drive the classifier; ignored for `heartbeat`. |
+| `message`    | string  | no       | maxlength 500. Used as the alarm message for `tamper`.      |
+| `timestamp`  | string  | yes      | ISO 8601. Rejected with `timestampInFuture` (HTTP 400) if more than 5 minutes ahead of server clock. |
 
-Response `201`:
+Response `201` (new event, alarm may or may not be created):
 
 ```json
 {
-  "event": {
-    "id": "651f5c...",
-    "eventType": "tamperDetected",
-    "severity": "high",
-    "timestamp": "2026-04-19T10:16:05Z"
-  },
-  "alarmCreated": true,
-  "alarmId": "651f6d..."
+  "eventId": "651f5c...",
+  "alarmId": "651f6d...",
+  "duplicate": false
 }
 ```
 
-The backend computes an idempotency key server-side from `sha256(deviceId|sensorId|timestamp|value|message)`. Retried POSTs return the existing record without duplicate insertion.
+Response `200` (idempotent replay of the same event):
+
+```json
+{
+  "eventId": "651f5c...",
+  "duplicate": true
+}
+```
+
+`alarmId` is `null` when the event did not trigger an alarm. The classifier rules (`cloud-app/src/services/alarm-classifier.ts`) are: `tamper` → critical, `temperature` ≥ 50 C → critical, ≥ 35 C or ≤ 5 C → warning, `battery` ≤ 2.7 V → critical, ≤ 3.0 V → warning, `heartbeat` → no alarm.
+
+The backend computes an idempotency key server-side from `sha256(deviceId|sensorKey|timestamp|value|message)` with NUL-byte sentinels for missing optional fields. Retried POSTs return the existing record (status 200) without duplicate insertion.
 
 ### 5.4 `POST /api/firewall/applyRule` (iter 2)
 
@@ -253,13 +266,17 @@ Response `201`: `{ "id": "651f7e...", "state": "active" }`
 
 The Next.js frontend calls the same Route Handlers from Server Components (`fetch`) and Client Components (TanStack Query polling). Authentication uses the Auth.js session cookie (same-origin).
 
-Endpoints used by the UI:
+Endpoints used by the UI (MVP iteration 1):
 
-- `GET /api/dashboard/getOverview` for dashboard KPIs
-- `GET /api/device/list` for `/devices`
-- `GET /api/event/list` for `/events`
+- `GET /api/device/list` for `/devices`, polled every 10 s
 - `GET /api/alarm/list` for `/alarms`, polled every 5 s
-- `POST /api/alarm/acknowledge` for acknowledge flow
+- `POST /api/alarm/acknowledge` for the acknowledge flow (server action style; same-origin guard enforced by `src/lib/origin-guard.ts`)
+- Server-rendered `/dashboard` reads counts directly from Mongoose in a Server Component (no separate `dashboard/getOverview` endpoint in the MVP)
+
+Endpoints planned for iteration 2 (not yet implemented):
+
+- `GET /api/dashboard/getOverview` for richer dashboard KPIs
+- `GET /api/event/list` for `/events`
 - `POST /api/device/update` for device management
 - `POST /api/sensor/register` for sensor onboarding
 - `POST /api/registration-token/issue` (admin) for device provisioning
@@ -274,32 +291,50 @@ End-to-end latency budget: detection (50 ms) + radio (50 ms) + Node-RED (100 ms)
 
 ## 8. Error envelope (cloud responses)
 
+The MVP follows uuApp conventions: errors are returned as a `uuAppErrorMap` keyed by camelCase error code.
+
 ```json
 {
-  "error": {
-    "code": "invalidDtoIn",
-    "message": "DtoIn is not valid.",
-    "params": {
-      "invalidTypeKeyMap": { "severity": "expected enum, got string" },
-      "invalidValueKeyMap": {},
-      "missingKeyMap": { "deviceId": "required" }
+  "uuAppErrorMap": {
+    "invalidDtoIn": {
+      "type": "error",
+      "message": "Request payload is invalid.",
+      "params": {
+        "issues": [
+          { "code": "invalid_type", "path": ["type"], "message": "expected enum" }
+        ]
+      }
     }
   }
 }
 ```
 
-Successful responses may carry a warning:
+Successful responses may carry a warning entry under `uuAppErrorMap`:
+
 ```json
 {
   "device": { "...": "..." },
-  "warning": {
-    "code": "unsupportedKeys",
-    "params": { "unsupportedKeyList": ["legacyField"] }
+  "uuAppErrorMap": {
+    "unsupportedKeys": {
+      "type": "warning",
+      "message": "Unknown keys ignored.",
+      "params": { "unsupportedKeyList": ["legacyField"] }
+    }
   }
 }
 ```
 
-Error codes follow the team's uuApp camelCase convention (see [backend_design.md](backend_design.md) § Error envelope).
+Common error codes used by the MVP:
+
+| Code                | HTTP | When                                                  |
+| ------------------- | ---- | ----------------------------------------------------- |
+| `invalidDtoIn`      | 400  | request body fails Zod validation                     |
+| `timestampInFuture` | 400  | event timestamp > server clock + 5 minutes            |
+| `invalidAlarmState` | 400  | acknowledge called on a non-`open` alarm              |
+| `unauthorized`      | 401  | missing/invalid session or bearer token               |
+| `forbidden`         | 403  | role check failure or cross-origin POST               |
+| `deviceNotFound`    | 404  | `event/create` references an unregistered device      |
+| `alarmNotFound`     | 404  | acknowledge references a missing alarm                |
 
 ## 9. Backward compatibility notes
 
