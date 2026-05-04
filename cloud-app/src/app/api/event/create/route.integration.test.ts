@@ -33,6 +33,7 @@ beforeAll(async () => {
     promise: Promise.resolve(mongoose),
     server: null,
     seeded: true,
+    uri: mongo.getUri(),
   };
 });
 

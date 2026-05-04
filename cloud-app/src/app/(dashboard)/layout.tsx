@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
-import { LayoutDashboard, Cpu, Bell } from "lucide-react";
 import { auth } from "@/lib/auth";
+import { DashboardNav } from "@/components/DashboardNav";
 import { Logo } from "@/components/Logo";
-import { NavLink } from "@/components/NavLink";
 import { SignOutButton } from "@/components/SignOutButton";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -16,11 +15,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-6 py-3">
           <Logo />
-          <nav className="hidden items-center gap-1 md:flex">
-            <NavLink href="/dashboard" icon={LayoutDashboard}>Dashboard</NavLink>
-            <NavLink href="/devices" icon={Cpu}>Devices</NavLink>
-            <NavLink href="/alarms" icon={Bell}>Alarms</NavLink>
-          </nav>
+          <DashboardNav variant="desktop" />
           <div className="flex items-center gap-3">
             <div className="hidden items-center gap-2 sm:flex">
               <span
@@ -37,11 +32,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <SignOutButton />
           </div>
         </div>
-        <nav className="flex items-center gap-1 border-t border-border px-4 py-2 md:hidden">
-          <NavLink href="/dashboard" icon={LayoutDashboard}>Dashboard</NavLink>
-          <NavLink href="/devices" icon={Cpu}>Devices</NavLink>
-          <NavLink href="/alarms" icon={Bell}>Alarms</NavLink>
-        </nav>
+        <DashboardNav variant="mobile" />
       </header>
       <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
     </div>

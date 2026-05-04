@@ -6,12 +6,15 @@ declare global {
     promise: Promise<typeof mongoose> | null;
     server: MongoMemoryServer | null;
     seeded: boolean;
+    uri: string | null;
   };
 }
 
 if (!globalThis.__irisDb) {
-  globalThis.__irisDb = { promise: null, server: null, seeded: false };
+  globalThis.__irisDb = { promise: null, server: null, seeded: false, uri: null };
 }
+
+const DB_NAME = process.env.MONGODB_DB ?? "iris";
 
 async function bootInMemoryMongo(): Promise<string> {
   if (!globalThis.__irisDb.server) {
@@ -22,6 +25,17 @@ async function bootInMemoryMongo(): Promise<string> {
   return globalThis.__irisDb.server.getUri();
 }
 
+async function resolveMongoUri(): Promise<string> {
+  const configuredUri = process.env.MONGODB_URI?.trim();
+  if (configuredUri) return configuredUri;
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("MONGODB_URI is required in production.");
+  }
+
+  return bootInMemoryMongo();
+}
+
 export async function connectDb(): Promise<typeof mongoose> {
   if (globalThis.__irisDb.promise) {
     return globalThis.__irisDb.promise;
@@ -29,8 +43,9 @@ export async function connectDb(): Promise<typeof mongoose> {
 
   const promise = (async () => {
     try {
-      const uri = await bootInMemoryMongo();
-      const conn = await mongoose.connect(uri, { dbName: "iris" });
+      const uri = await resolveMongoUri();
+      const conn = await mongoose.connect(uri, { dbName: DB_NAME });
+      globalThis.__irisDb.uri = uri;
       if (!globalThis.__irisDb.seeded) {
         const { runSeed } = await import("./seed");
         await runSeed();

@@ -4,10 +4,10 @@ Next.js cloud application for Iris Gateway. Holds both the React frontend and th
 
 ## Stack
 
-- Next.js 15 (App Router) + React 19 + TypeScript 5
-- MongoDB via `mongodb-memory-server` for local dev (zero infra). MongoDB Atlas planned for production
-- Mongoose 8 for models
-- Auth.js v5 (Credentials provider, Argon2id at OWASP recommended cost) for users (`ADMIN | OPERATOR | USER`)
+- Next.js 16 (App Router) + React 19 + TypeScript
+- MongoDB via `mongodb-memory-server` for zero-infra local dev, or `MONGODB_URI` for persistent MongoDB / Atlas
+- Mongoose for models
+- NextAuth credentials provider, Argon2id passwords for users (`ADMIN | OPERATOR | USER`)
 - Bearer token authentication for the `DEVICE` role (per-device API token, SHA-256 hashed at rest)
 - Zod for input validation (shared schemas with the frontend)
 - Tailwind CSS v3 + small shadcn-style component layer
@@ -19,22 +19,29 @@ Next.js cloud application for Iris Gateway. Holds both the React frontend and th
 ```bash
 cd cloud-app
 bun install
-cp .env.example .env.local            # generate AUTH_SECRET, see below
+cp .env.example .env.local            # generate NEXTAUTH_SECRET, see below
 bun dev                               # http://localhost:3000
 ```
 
-`AUTH_SECRET` must be at least 32 random bytes:
+`NEXTAUTH_SECRET` must be at least 32 random bytes:
 
 ```bash
 openssl rand -base64 32
 ```
 
-On first request the app boots an in-memory MongoDB and seeds:
+By default, the first request boots an in-memory MongoDB and seeds:
 
 - admin user `admin@iris.local` / `admin123` (override via `SEED_ADMIN_*`)
 - a mock gateway device `mock-gateway-01` with token `mock-token-please-rotate` (override via `SEED_DEVICE_*`)
 
-In-memory data is wiped on every restart. Switch to MongoDB Atlas later by replacing the connection logic in `src/lib/db.ts`. Production seeding refuses to run with default credentials (must set `SEED_ADMIN_PASSWORD` and `SEED_DEVICE_TOKEN` to non-default values).
+In-memory data is wiped on every restart. For hardware demos or production-like testing, set `MONGODB_URI` in `.env.local`, for example:
+
+```bash
+MONGODB_URI=mongodb://127.0.0.1:27017/iris
+MONGODB_DB=iris
+```
+
+Production refuses to boot without `MONGODB_URI`. Production seeding also refuses default credentials; set `SEED_ADMIN_PASSWORD` and `SEED_DEVICE_TOKEN` to non-default values.
 
 ### Tests
 
@@ -63,6 +70,24 @@ bun run mock-device
 
 The mock device script POSTs a scenario (temperature normal -> tamper -> temperature critical -> battery critical -> heartbeat) on a loop. Watch `/dashboard` and `/alarms` update via 5-second polling. SIGINT (Ctrl+C) exits cleanly between iterations.
 
+## Raspberry Pi gateway demo
+
+When the Raspberry Pi forwards events to a cloud app running on your notebook, start Next.js on all interfaces:
+
+```bash
+bun dev --hostname 0.0.0.0
+```
+
+Configure the Node-RED gateway flow with:
+
+```bash
+CLOUD_BASE_URL=http://<notebook-ip>:3000
+DEVICE_NAME=mock-gateway-01
+DEVICE_TOKEN=mock-token-please-rotate
+```
+
+The gateway posts MVP cloud events to `POST /api/event/create`. The raw HARDWARIO payload is translated inside `gateway/flows.json` before it reaches the cloud API.
+
 ## Project layout
 
 ```
@@ -90,7 +115,7 @@ src/
     ui/                    # button, card, input, badge
   lib/
     auth.ts                # Auth.js v5 config (handlers, auth, signIn, signOut)
-    db.ts                  # mongodb-memory-server boot + auto-seed (with promise reset on error)
+    db.ts                  # MONGODB_URI or mongodb-memory-server boot + auto-seed
     device-auth.ts         # bearer token -> Device lookup
     error-envelope.ts      # uuAppErrorMap helpers, fromZod with errorCode tagging
     idempotency.ts         # eventIdempotencyKey (NUL-sentinel for missing fields)

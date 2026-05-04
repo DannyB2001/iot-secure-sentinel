@@ -79,7 +79,7 @@
     "libs": [],
     "x": 860,
     "y": 60,
-    "wires": [["n1a0b008", "n1a0b009", "n1a0b014"]]
+    "wires": [["n1a0b008", "n1a0b009", "n1a0b014", "n1a0b016"]]
   },
   {
     "id": "n1a0b006",
@@ -95,7 +95,7 @@
     "libs": [],
     "x": 870,
     "y": 140,
-    "wires": [["n1a0b007", "n1a0b011", "n1a0b015"]]
+    "wires": [["n1a0b007", "n1a0b011", "n1a0b015", "n1a0b017", "n1a0b018"]]
   },
   {
     "id": "n1a0b007",
@@ -251,6 +251,91 @@
     "broker": "n1a0b013",
     "x": 1130,
     "y": 220,
+    "wires": []
+  },
+  {
+    "id": "n1a0b016",
+    "type": "function",
+    "z": "f1a0b001",
+    "name": "Build cloud tamper event",
+    "func": "const p = msg.payload;\nconst baseUrl = String(env.get('CLOUD_BASE_URL') || flow.get('cloudBaseUrl') || 'http://127.0.0.1:3000').replace(/\\/+$/, '');\nconst token = String(env.get('DEVICE_TOKEN') || flow.get('deviceToken') || 'mock-token-please-rotate');\nconst deviceName = String(env.get('DEVICE_NAME') || flow.get('deviceName') || 'mock-gateway-01');\nconst ts = Date.parse(p.timestamp);\nconst timestamp = Number.isNaN(ts) || ts - Date.now() > 5 * 60 * 1000 ? new Date().toISOString() : new Date(ts).toISOString();\n\nmsg.url = `${baseUrl}/api/event/create`;\nmsg.headers = {\n    'content-type': 'application/json',\n    authorization: `Bearer ${token}`\n};\nmsg.payload = {\n    deviceName,\n    sensorKey: 'core-accelerometer',\n    type: 'tamper',\n    value: p.accelG,\n    message: p.message || 'Acceleration threshold exceeded',\n    timestamp\n};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1130,
+    "y": 300,
+    "wires": [["n1a0b019"]]
+  },
+  {
+    "id": "n1a0b017",
+    "type": "function",
+    "z": "f1a0b001",
+    "name": "Build cloud temperature event",
+    "func": "const p = msg.payload;\nif (typeof p.temperatureC !== 'number') {\n    return null;\n}\nconst baseUrl = String(env.get('CLOUD_BASE_URL') || flow.get('cloudBaseUrl') || 'http://127.0.0.1:3000').replace(/\\/+$/, '');\nconst token = String(env.get('DEVICE_TOKEN') || flow.get('deviceToken') || 'mock-token-please-rotate');\nconst deviceName = String(env.get('DEVICE_NAME') || flow.get('deviceName') || 'mock-gateway-01');\nconst ts = Date.parse(p.timestamp);\nconst timestamp = Number.isNaN(ts) || ts - Date.now() > 5 * 60 * 1000 ? new Date().toISOString() : new Date(ts).toISOString();\n\nmsg.url = `${baseUrl}/api/event/create`;\nmsg.headers = {\n    'content-type': 'application/json',\n    authorization: `Bearer ${token}`\n};\nmsg.payload = {\n    deviceName,\n    sensorKey: 'core-thermometer',\n    type: 'temperature',\n    value: p.temperatureC,\n    timestamp\n};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1150,
+    "y": 360,
+    "wires": [["n1a0b019"]]
+  },
+  {
+    "id": "n1a0b018",
+    "type": "function",
+    "z": "f1a0b001",
+    "name": "Build cloud battery event",
+    "func": "const p = msg.payload;\nif (typeof p.batteryVoltage !== 'number') {\n    return null;\n}\nconst baseUrl = String(env.get('CLOUD_BASE_URL') || flow.get('cloudBaseUrl') || 'http://127.0.0.1:3000').replace(/\\/+$/, '');\nconst token = String(env.get('DEVICE_TOKEN') || flow.get('deviceToken') || 'mock-token-please-rotate');\nconst deviceName = String(env.get('DEVICE_NAME') || flow.get('deviceName') || 'mock-gateway-01');\nconst ts = Date.parse(p.timestamp);\nconst timestamp = Number.isNaN(ts) || ts - Date.now() > 5 * 60 * 1000 ? new Date().toISOString() : new Date(ts).toISOString();\n\nmsg.url = `${baseUrl}/api/event/create`;\nmsg.headers = {\n    'content-type': 'application/json',\n    authorization: `Bearer ${token}`\n};\nmsg.payload = {\n    deviceName,\n    sensorKey: 'core-battery',\n    type: 'battery',\n    value: p.batteryVoltage,\n    timestamp\n};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1140,
+    "y": 420,
+    "wires": [["n1a0b019"]]
+  },
+  {
+    "id": "n1a0b019",
+    "type": "http request",
+    "z": "f1a0b001",
+    "name": "POST cloud event/create",
+    "method": "POST",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 1410,
+    "y": 360,
+    "wires": [["n1a0b020"]]
+  },
+  {
+    "id": "n1a0b020",
+    "type": "debug",
+    "z": "f1a0b001",
+    "name": "Cloud response",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 1640,
+    "y": 360,
     "wires": []
   }
 ]

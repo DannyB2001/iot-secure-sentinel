@@ -89,7 +89,7 @@ Role groups: `SYS_MGMT` (`ADMIN`), `MONITORING` (`OPERATOR`, `USER`), `DEVICE_IN
 - Physical kill switch on GPIO 17
 - Backend commands: `firewall/applyRule` plus `event/create` with `eventType: networkAnomaly`
 
-The repository code currently delivers iteration 1 (firmware skeleton and Node-RED flow are present; cloud app is to be implemented per the design docs). Iteration 2 is fully specified in the design documents.
+The repository code currently delivers an iteration 1 MVP: firmware skeleton, Node-RED gateway flow, and a cloud app that accepts bearer-token device events and renders dashboard/device/alarm views. Iteration 2 is fully specified in the design documents.
 
 ## Component status
 
@@ -97,8 +97,8 @@ The repository code currently delivers iteration 1 (firmware skeleton and Node-R
 | ---------------------------- | ---------------------------------------------------------- |
 | Documentation                | complete (this iteration)                                  |
 | Node firmware (`hw-node`)    | skeleton in `main.c`, needs HARDWARIO SDK wiring (I-M1)    |
-| Node-RED flow (`gateway`)    | working flow with demo inject, validation, alarm branch, moving avg, local Mongo, MQTT publish; cloud HTTP forwarder is the planned extension (I-M4) |
-| Cloud app (`cloud-app`)      | placeholder, implementation per `docs/backend_design.md` and `docs/frontend_design.md` |
+| Node-RED flow (`gateway`)    | working flow with demo inject, validation, alarm branch, moving avg, local Mongo, MQTT publish, and cloud HTTP forwarder |
+| Cloud app (`cloud-app`)      | MVP implementation present: login, dashboard, devices, alarms, `event/create`, bearer-token device ingest |
 
 ## Wire format (node → gateway)
 
@@ -124,12 +124,10 @@ The repository code currently delivers iteration 1 (firmware skeleton and Node-R
 cd cloud-app
 bun install
 cp .env.example .env.local
-docker compose up -d              # local MongoDB
-bun run db:seed                   # creates an admin user
 bun dev                           # http://localhost:3000
 ```
 
-Note: `cloud-app/` is currently a placeholder. The above will work after milestone M1 is implemented.
+By default the cloud app starts an in-memory MongoDB and seeds `admin@iris.local` / `admin123` plus the mock gateway token used by `scripts/mock-device.ts`. For Raspberry Pi / hardware demos, set `MONGODB_URI` in `cloud-app/.env.local` before boot so data survives restarts.
 
 ### Gateway
 
@@ -146,7 +144,7 @@ In the Node-RED editor:
 1. `Menu → Import` → paste the contents of `gateway/flows.json`
 2. Adjust the input node (serial / MQTT) to match your hardware
 3. Configure the MongoDB and MQTT connection nodes for your environment
-4. Set the cloud forwarder base URL to your local Next.js (`http://host.docker.internal:3000`) or your deployed Vercel URL
+4. Set `CLOUD_BASE_URL`, `DEVICE_NAME`, and `DEVICE_TOKEN` for the Node-RED process; see [gateway/README.md](gateway/README.md)
 5. Deploy
 
 ## Hardware bill of materials
