@@ -1,0 +1,161 @@
+[
+    {
+        "id": "5f829f4c857f8eaf",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "ee5219f80a3439d1",
+        "type": "mqtt in",
+        "z": "5f829f4c857f8eaf",
+        "name": "",
+        "topic": "node/#",
+        "qos": "2",
+        "datatype": "json",
+        "broker": "100bb134370c2caa",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 250,
+        "y": 140,
+        "wires": [
+            [
+                "fd9c5a2b79cf5ab7",
+                "d38dbf9b1283f4bb"
+            ]
+        ]
+    },
+    {
+        "id": "d38dbf9b1283f4bb",
+        "type": "function",
+        "z": "5f829f4c857f8eaf",
+        "name": "Mapovani HARDWARIO topicu",
+        "func": "const topic = msg.topic;\nconst rawValue = msg.payload;\nconst value = Number(rawValue);\nconst now = new Date().toISOString();\n\nconst parts = topic.split(\"/\");\nconst hardwarioNodeId = parts[1] || \"unknown-device\";\n\n// Backend zatím zná toto zařízení:\nconst backendDeviceName = \"mock-gateway-01\";\n\nlet event = null;\n\n// 1) TLAČÍTKO\nif (topic.includes(\"/push-button/-/event-count\")) {\n  event = {\n    deviceName: backendDeviceName,\n    sensorKey: `${hardwarioNodeId}-button`,\n    type: \"tamper\",\n    value: value,\n    message: `HARDWARIO button pressed: ${hardwarioNodeId}`,\n    timestamp: now\n  };\n}\n\n// 2) TEPLOTA\nelse if (topic.includes(\"/thermometer/\") && topic.endsWith(\"/temperature\")) {\n  event = {\n    deviceName: backendDeviceName,\n    sensorKey: `${hardwarioNodeId}-thermometer`,\n    type: \"temperature\",\n    value: value,\n    timestamp: now\n  };\n}\n\n// 3) INFRARED / PIR POHYB\nelse if (\n  topic.includes(\"/pir/\") ||\n  topic.includes(\"/infrared/\") ||\n  topic.includes(\"/motion-detector/\")\n) {\n  event = {\n    deviceName: backendDeviceName,\n    sensorKey: `${hardwarioNodeId}-motion`,\n    type: \"tamper\",\n    value: isNaN(value) ? 1 : value,\n    message: `Motion detected by infrared sensor: ${hardwarioNodeId}`,\n    timestamp: now\n  };\n}\n\n// 4) AKCELEROMETR\nelse if (\n  topic.includes(\"/accelerometer/\") ||\n  topic.includes(\"/acceleration/\")\n) {\n  const threshold = 1.2;\n\n  if (isNaN(value) || value < threshold) {\n    return null;\n  }\n\n  event = {\n    deviceName: backendDeviceName,\n    sensorKey: `${hardwarioNodeId}-accelerometer`,\n    type: \"tamper\",\n    value: value,\n    message: `Acceleration threshold exceeded: ${hardwarioNodeId}`,\n    timestamp: now\n  };\n}\n\n// 5) BATERIE\nelse if (\n  topic.includes(\"/battery/\") ||\n  topic.includes(\"/voltage\")\n) {\n  event = {\n    deviceName: backendDeviceName,\n    sensorKey: `${hardwarioNodeId}-battery`,\n    type: \"battery\",\n    value: value,\n    timestamp: now\n  };\n}\n\nif (!event) {\n  return null;\n}\n\nmsg.payload = event;\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 610,
+        "y": 240,
+        "wires": [
+            [
+                "3983e7650e9d5406"
+            ]
+        ]
+    },
+    {
+        "id": "3983e7650e9d5406",
+        "type": "function",
+        "z": "5f829f4c857f8eaf",
+        "name": "Příprava HTTP Requestu",
+        "func": "const baseUrl = String(\n    env.get(\"CLOUD_BASE_URL\") || env.get(\"CLOUD_API_BASE_URL\") || \"\"\n).replace(/\\/+$/, \"\");\n\nconst token = env.get(\"DEVICE_TOKEN\");\n\nif (!baseUrl) {\n    node.error(\"Missing CLOUD_BASE_URL\", msg);\n    return null;\n}\n\nif (!token) {\n    node.error(\"Missing DEVICE_TOKEN\", msg);\n    return null;\n}\n\nmsg.url = `${baseUrl}/api/event/create`;\n\nmsg.headers = {\n    \"Authorization\": `Bearer ${token}`,\n    \"Content-Type\": \"application/json\"\n};\n\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 710,
+        "y": 520,
+        "wires": [
+            [
+                "a638db0e628cb57f"
+            ]
+        ]
+    },
+    {
+        "id": "a638db0e628cb57f",
+        "type": "http request",
+        "z": "5f829f4c857f8eaf",
+        "name": "",
+        "method": "POST",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 930,
+        "y": 620,
+        "wires": [
+            [
+                "ab8dad53d93f2ec3"
+            ]
+        ]
+    },
+    {
+        "id": "fd9c5a2b79cf5ab7",
+        "type": "debug",
+        "z": "5f829f4c857f8eaf",
+        "name": "debug 1",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 600,
+        "y": 120,
+        "wires": []
+    },
+    {
+        "id": "ab8dad53d93f2ec3",
+        "type": "debug",
+        "z": "5f829f4c857f8eaf",
+        "name": "debug 2",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1100,
+        "y": 620,
+        "wires": []
+    },
+    {
+        "id": "100bb134370c2caa",
+        "type": "mqtt-broker",
+        "name": "localhost:1883",
+        "broker": "localhost:1883",
+        "port": 1883,
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    }
+]
