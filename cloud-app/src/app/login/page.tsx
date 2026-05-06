@@ -22,13 +22,18 @@ function LoginForm() {
     e.preventDefault();
     setError(null);
     setPending(true);
-    const res = await signIn("credentials", { email, password, redirect: false });
+    const res = await signIn("credentials", {
+      email,
+      password,
+      callbackUrl,
+      redirect: false,
+    });
     setPending(false);
-    if (!res || res.error) {
+    if (!res?.ok || res.error) {
       setError("Invalid email or password.");
       return;
     }
-    router.replace(callbackUrl);
+    router.replace(res.url ?? callbackUrl);
     router.refresh();
   }
 
