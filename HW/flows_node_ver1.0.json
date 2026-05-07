@@ -1,0 +1,388 @@
+[
+    {
+        "id": "5f829f4c857f8eaf",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "ee5219f80a3439d1",
+        "type": "mqtt in",
+        "z": "5f829f4c857f8eaf",
+        "name": "",
+        "topic": "node/#",
+        "qos": "2",
+        "datatype": "json",
+        "broker": "100bb134370c2caa",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 50,
+        "y": 80,
+        "wires": [
+            [
+                "fd9c5a2b79cf5ab7",
+                "d38dbf9b1283f4bb",
+                "4aafad7c1549f63e",
+                "fdea8f0209711737"
+            ]
+        ]
+    },
+    {
+        "id": "d38dbf9b1283f4bb",
+        "type": "function",
+        "z": "5f829f4c857f8eaf",
+        "name": "Mapovani HARDWARIO topicu",
+        "func": "const topic = msg.topic;\nconst rawValue = msg.payload;\nconst value = Number(rawValue);\nconst now = new Date().toISOString();\n\nconst parts = topic.split(\"/\");\nconst hardwarioNodeId = parts[1] || \"unknown-device\";\n\n// Backend zatím zná toto zařízení:\nconst backendDeviceName = \"mock-gateway-01\";\n\nlet event = null;\n\n// 1) TLAČÍTKO\nif (topic.includes(\"/push-button/-/event-count\")) {\n  event = {\n    deviceName: backendDeviceName,\n    sensorKey: `${hardwarioNodeId}-button`,\n    type: \"tamper\",\n    value: value,\n    message: `HARDWARIO button pressed: ${hardwarioNodeId}`,\n    timestamp: now\n  };\n}\n\n// 2) TEPLOTA\nelse if (topic.includes(\"/thermometer/\") && topic.endsWith(\"/temperature\")) {\n  event = {\n    deviceName: backendDeviceName,\n    sensorKey: `${hardwarioNodeId}-thermometer`,\n    type: \"temperature\",\n    value: value,\n    timestamp: now\n  };\n}\n\n// 3) INFRARED / PIR POHYB\nelse if (\n  topic.includes(\"/pir/\") ||\n  topic.includes(\"/infrared/\") ||\n  topic.includes(\"/motion-detector/\")\n) {\n  event = {\n    deviceName: backendDeviceName,\n    sensorKey: `${hardwarioNodeId}-motion`,\n    type: \"tamper\",\n    value: isNaN(value) ? 1 : value,\n    message: `Motion detected by infrared sensor: ${hardwarioNodeId}`,\n    timestamp: now\n  };\n}\n\n// 4) AKCELEROMETR\nelse if (\n  topic.includes(\"/accelerometer/\") ||\n  topic.includes(\"/acceleration/\")\n) {\n  const threshold = 1.2;\n\n  if (isNaN(value) || value < threshold) {\n    return null;\n  }\n\n  event = {\n    deviceName: backendDeviceName,\n    sensorKey: `${hardwarioNodeId}-accelerometer`,\n    type: \"tamper\",\n    value: value,\n    message: `Acceleration threshold exceeded: ${hardwarioNodeId}`,\n    timestamp: now\n  };\n}\n\n// 5) BATERIE\nelse if (\n  topic.includes(\"/battery/\") ||\n  topic.includes(\"/voltage\")\n) {\n  event = {\n    deviceName: backendDeviceName,\n    sensorKey: `${hardwarioNodeId}-battery`,\n    type: \"battery\",\n    value: value,\n    timestamp: now\n  };\n}\n\nif (!event) {\n  return null;\n}\n\nmsg.payload = event;\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 630,
+        "y": 180,
+        "wires": [
+            [
+                "3983e7650e9d5406"
+            ]
+        ]
+    },
+    {
+        "id": "3983e7650e9d5406",
+        "type": "function",
+        "z": "5f829f4c857f8eaf",
+        "name": "Příprava HTTP Requestu",
+        "func": "const baseUrl = String(\n    env.get(\"CLOUD_BASE_URL\") || env.get(\"CLOUD_API_BASE_URL\") || \"\"\n).replace(/\\/+$/, \"\");\n\nconst token = env.get(\"DEVICE_TOKEN\");\n\nif (!baseUrl) {\n    node.error(\"Missing CLOUD_BASE_URL\", msg);\n    return null;\n}\n\nif (!token) {\n    node.error(\"Missing DEVICE_TOKEN\", msg);\n    return null;\n}\n\nmsg.url = `${baseUrl}/api/event/create`;\n\nmsg.headers = {\n    \"Authorization\": `Bearer ${token}`,\n    \"Content-Type\": \"application/json\"\n};\n\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1070,
+        "y": 340,
+        "wires": [
+            [
+                "a638db0e628cb57f"
+            ]
+        ]
+    },
+    {
+        "id": "a638db0e628cb57f",
+        "type": "http request",
+        "z": "5f829f4c857f8eaf",
+        "name": "",
+        "method": "POST",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 1270,
+        "y": 340,
+        "wires": [
+            [
+                "ab8dad53d93f2ec3"
+            ]
+        ]
+    },
+    {
+        "id": "fd9c5a2b79cf5ab7",
+        "type": "debug",
+        "z": "5f829f4c857f8eaf",
+        "name": "debug 1",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 420,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "ab8dad53d93f2ec3",
+        "type": "debug",
+        "z": "5f829f4c857f8eaf",
+        "name": "debug 2",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1280,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "e6db5908f002f3c1",
+        "type": "inject",
+        "z": "5f829f4c857f8eaf",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "60",
+        "crontab": "",
+        "once": false,
+        "onceDelay": "60",
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 310,
+        "y": 240,
+        "wires": [
+            [
+                "d2bbcfcc56f67e0d"
+            ]
+        ]
+    },
+    {
+        "id": "d2bbcfcc56f67e0d",
+        "type": "function",
+        "z": "5f829f4c857f8eaf",
+        "name": "Gateway alive",
+        "func": "const now = new Date().toISOString();\n\nmsg.payload = {\n    deviceName: env.get(\"DEVICE_NAME\") || \"mock-gateway-01\",\n    sensorKey: \"core-heartbeat\",\n    type: \"heartbeat\",\n    value: 1,\n    message: \"Raspberry Pi gateway alive\",\n    timestamp: now\n};\n\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 580,
+        "y": 320,
+        "wires": [
+            [
+                "3983e7650e9d5406"
+            ]
+        ]
+    },
+    {
+        "id": "4aafad7c1549f63e",
+        "type": "function",
+        "z": "5f829f4c857f8eaf",
+        "name": "Update node lastSeen",
+        "func": "const topic = msg.topic;\nconst parts = topic.split(\"/\");\n\nif (parts[0] === \"node\" && parts[1]) {\n    const nodeId = parts[1];\n\n    let lastSeen = flow.get(\"nodeLastSeen\") || {};\n\n    lastSeen[nodeId] = {\n        nodeId,\n        lastSeenAt: Date.now(),\n        lastTopic: topic,\n        lastPayload: msg.payload\n    };\n\n    flow.set(\"nodeLastSeen\", lastSeen);\n}\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 600,
+        "y": 240,
+        "wires": [
+            [
+                "3983e7650e9d5406"
+            ]
+        ]
+    },
+    {
+        "id": "e9326e537e9408ab",
+        "type": "inject",
+        "z": "5f829f4c857f8eaf",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "30",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 330,
+        "y": 320,
+        "wires": [
+            [
+                "56297fcb7f478e5c"
+            ]
+        ]
+    },
+    {
+        "id": "56297fcb7f478e5c",
+        "type": "function",
+        "z": "5f829f4c857f8eaf",
+        "name": "Offline",
+        "func": "const now = Date.now();\nconst nowIso = new Date().toISOString();\n\nconst offlineTimeoutMs = 2 * 60 * 1000;\nconst backendDeviceName = \"mock-gateway-01\";\n\nconst lastSeen = flow.get(\"nodeLastSeen\") || {};\nlet knownStates = flow.get(\"nodeKnownStates\") || {};\n\nconst events = [];\n\nfor (const nodeId of Object.keys(lastSeen)) {\n    const ageMs = now - lastSeen[nodeId].lastSeenAt;\n    const newState = ageMs > offlineTimeoutMs ? \"offline\" : \"online\";\n    const oldState = knownStates[nodeId];\n\n    if (oldState !== newState) {\n        knownStates[nodeId] = newState;\n\n        events.push({\n            deviceName: backendDeviceName,\n            sensorKey: `${nodeId}-status`,\n            type: newState === \"offline\" ? \"tamper\" : \"heartbeat\",\n            value: newState === \"offline\" ? 0 : 1,\n            message: `HARDWARIO node ${newState}: ${nodeId}`,\n            timestamp: nowIso\n        });\n    }\n}\n\nflow.set(\"nodeKnownStates\", knownStates);\n\nif (events.length === 0) {\n    return null;\n}\n\nmsg.payload = events;\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 570,
+        "y": 400,
+        "wires": [
+            [
+                "5aa817f33d0372a0"
+            ]
+        ]
+    },
+    {
+        "id": "5aa817f33d0372a0",
+        "type": "split",
+        "z": "5f829f4c857f8eaf",
+        "name": "",
+        "splt": "\\n",
+        "spltType": "str",
+        "arraySplt": 1,
+        "arraySpltType": "len",
+        "stream": false,
+        "addname": "",
+        "property": "payload",
+        "x": 770,
+        "y": 400,
+        "wires": [
+            [
+                "3983e7650e9d5406"
+            ]
+        ]
+    },
+    {
+        "id": "fdea8f0209711737",
+        "type": "function",
+        "z": "5f829f4c857f8eaf",
+        "name": "Filter temperature",
+        "func": "const topic = msg.topic;\nconst value = Number(msg.payload);\n\nnode.status({\n    fill: \"blue\",\n    shape: \"dot\",\n    text: `${topic} = ${msg.payload}`\n});\n\nif (!topic.includes(\"/thermometer/\")) {\n    return null;\n}\n\nif (!topic.endsWith(\"/temperature\")) {\n    return null;\n}\n\nif (Number.isNaN(value)) {\n    node.warn(`Invalid temperature value: ${msg.payload}`);\n    return null;\n}\n\nmsg.temperatureValue = value;\nmsg.hardwarioTopic = topic;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 230,
+        "y": 480,
+        "wires": [
+            [
+                "1b690c76a7eba4cc"
+            ]
+        ]
+    },
+    {
+        "id": "1b690c76a7eba4cc",
+        "type": "function",
+        "z": "5f829f4c857f8eaf",
+        "name": "Buffer temperature",
+        "func": "const value = msg.temperatureValue;\n\nlet buffer = flow.get(\"temperatureBuffer\") || [];\n\nbuffer.push({\n    value,\n    timestamp: Date.now(),\n    topic: msg.hardwarioTopic\n});\n\nflow.set(\"temperatureBuffer\", buffer);\n\nnode.status({\n    fill: \"green\",\n    shape: \"dot\",\n    text: `${buffer.length} samples, last ${value}`\n});\n\nreturn null;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 610,
+        "y": 480,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "7935a50004b20b65",
+        "type": "inject",
+        "z": "5f829f4c857f8eaf",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "60",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 310,
+        "y": 560,
+        "wires": [
+            [
+                "e04b9fe419e9fbb1"
+            ]
+        ]
+    },
+    {
+        "id": "e04b9fe419e9fbb1",
+        "type": "function",
+        "z": "5f829f4c857f8eaf",
+        "name": "Send temperature average",
+        "func": "let buffer = flow.get(\"temperatureBuffer\") || [];\n\nif (buffer.length === 0) {\n    node.status({\n        fill: \"yellow\",\n        shape: \"ring\",\n        text: \"no temperature samples\"\n    });\n    return null;\n}\n\nconst values = buffer\n    .map(item => Number(item.value))\n    .filter(value => !Number.isNaN(value));\n\nif (values.length === 0) {\n    flow.set(\"temperatureBuffer\", []);\n    node.warn(\"Temperature buffer contains no valid numeric values\");\n    return null;\n}\n\nconst sum = values.reduce((acc, value) => acc + value, 0);\nconst avg = sum / values.length;\n\nflow.set(\"temperatureBuffer\", []);\n\nmsg.payload = {\n    deviceName: \"mock-gateway-01\",\n    sensorKey: \"core-thermometer\",\n    type: \"temperature\",\n    value: Number(avg.toFixed(2)),\n    timestamp: new Date().toISOString()\n};\n\nnode.status({\n    fill: \"blue\",\n    shape: \"dot\",\n    text: `sent avg ${msg.payload.value} °C from ${values.length} samples`\n});\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 600,
+        "y": 560,
+        "wires": [
+            [
+                "3983e7650e9d5406"
+            ]
+        ]
+    },
+    {
+        "id": "100bb134370c2caa",
+        "type": "mqtt-broker",
+        "name": "localhost:1883",
+        "broker": "localhost:1883",
+        "port": 1883,
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    }
+]
