@@ -4,6 +4,7 @@ import { authenticateDevice } from "@/lib/device-auth";
 import { errorResponse, fromZod } from "@/lib/error-envelope";
 import { eventIdempotencyKey } from "@/lib/idempotency";
 import { eventCreateSchema } from "@/lib/validation/event";
+import { isOfflineStatusEvent, isOnlineHeartbeatEvent } from "@/lib/device-status";
 import { Device } from "@/models/Device";
 import { Event } from "@/models/Event";
 import { Alarm } from "@/models/Alarm";
@@ -48,18 +49,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ eventId: String(existing._id), duplicate: true }, { status: 200 });
   }
 
+  const eventTimestamp = new Date(input.timestamp);
   const event = await Event.create({
     deviceId: device._id,
     sensorKey: input.sensorKey,
     type: input.type,
     value: input.value,
     message: input.message,
-    timestamp: new Date(input.timestamp),
+    timestamp: eventTimestamp,
     idempotencyKey,
   });
 
-  device.lastSeen = new Date();
-  device.status = "online";
+  const offlineEvent = isOfflineStatusEvent(input);
+  device.lastSeen = eventTimestamp;
+  device.lastSeenAt = eventTimestamp;
+  if (input.type === "battery" && typeof input.value === "number") {
+    device.batteryVoltage = input.value;
+  }
+  if (offlineEvent) {
+    device.status = "offline";
+    device.lastOfflineAt = eventTimestamp;
+  } else {
+    device.status = "online";
+    if (isOnlineHeartbeatEvent(input)) {
+      device.lastHeartbeatAt = eventTimestamp;
+    }
+  }
   await device.save();
 
   const draft = classify(input);

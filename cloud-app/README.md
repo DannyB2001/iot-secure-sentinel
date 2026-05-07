@@ -144,9 +144,14 @@ scripts/
 | Command            | Method | Path                                       | Auth                |
 |--------------------|--------|--------------------------------------------|---------------------|
 | `event/create`     | POST   | `/api/event/create`                        | Bearer device token |
+| `cron/tick`        | GET    | `/api/cron/tick`                           | `CRON_SECRET` bearer token in production |
 | `device/list`      | GET    | `/api/device/list`                         | Session             |
 | `alarm/list`       | GET    | `/api/alarm/list?state=open&limit=100`     | Session             |
 | `alarm/acknowledge`| POST   | `/api/alarm/acknowledge`                   | Session (OPERATOR+) + same-origin |
+
+Heartbeat events are sent to `POST /api/event/create` with `type: "heartbeat"` and refresh
+`Device.lastSeenAt`. `GET /api/cron/tick` marks devices offline when `lastSeenAt` is older than
+`OFFLINE_TIMEOUT_MS` (default `120000`) and creates a critical `tamper` alarm.
 
 Errors follow uuApp shape: `{ "uuAppErrorMap": { "<code>": { "type": "error", "message": "..." } } }`.
 

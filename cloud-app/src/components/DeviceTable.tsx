@@ -1,10 +1,11 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { BatteryLow, Cpu, Router, ServerCrash } from "lucide-react";
+import { BatteryLow, Cpu, Router, ServerCrash, Thermometer } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { RelativeTime } from "@/components/RelativeTime";
 import { StatusDot } from "@/components/StatusDot";
+import { cn } from "@/lib/utils";
 import { THRESHOLDS } from "@/services/alarm-classifier";
 
 type DeviceRow = {
@@ -16,6 +17,8 @@ type DeviceRow = {
   lastSeen: string | null;
   firmwareVersion: string | null;
   batteryVoltage: number | null;
+  temperatureC: number | null;
+  temperatureAt: string | null;
 };
 
 const NO_VALUE = "-";
@@ -58,13 +61,14 @@ export function DeviceTable() {
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-      <table className="w-full text-sm">
+    <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
+      <table className="w-full min-w-[920px] text-sm">
         <thead className="border-b border-border bg-secondary/40 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <tr>
             <th className="px-6 py-3">Device</th>
             <th className="px-6 py-3">Status</th>
             <th className="px-6 py-3">Location</th>
+            <th className="px-6 py-3">Temperature</th>
             <th className="px-6 py-3">Battery</th>
             <th className="px-6 py-3">Firmware</th>
             <th className="px-6 py-3">Last seen</th>
@@ -75,6 +79,10 @@ export function DeviceTable() {
             const Icon = device.type === "gateway" ? Router : Cpu;
             const lowBattery =
               device.batteryVoltage !== null && device.batteryVoltage <= THRESHOLDS.batteryWarn;
+            const temperatureWarning =
+              device.temperatureC !== null &&
+              (device.temperatureC >= THRESHOLDS.tempWarnHigh ||
+                device.temperatureC <= THRESHOLDS.tempWarnLow);
             return (
               <tr
                 key={device.id}
@@ -97,6 +105,28 @@ export function DeviceTable() {
                   <StatusDot status={device.status} />
                 </td>
                 <td className="px-6 py-4 text-muted-foreground">{device.location ?? NO_VALUE}</td>
+                <td className="px-6 py-4 tabular-nums">
+                  {device.temperatureC !== null ? (
+                    <div className="flex flex-col gap-0.5">
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1",
+                          temperatureWarning ? "text-warning" : "text-foreground",
+                        )}
+                      >
+                        <Thermometer className="h-4 w-4" aria-hidden="true" />
+                        {device.temperatureC.toFixed(1)} C
+                      </span>
+                      {device.temperatureAt ? (
+                        <span className="text-xs text-muted-foreground">
+                          <RelativeTime date={device.temperatureAt} />
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">{NO_VALUE}</span>
+                  )}
+                </td>
                 <td className="px-6 py-4 tabular-nums">
                   {device.batteryVoltage !== null ? (
                     <span
@@ -130,17 +160,17 @@ export function DeviceTable() {
 
 function DevicesSkeleton() {
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+    <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
       <div className="px-6 py-3">
-        <div className="grid grid-cols-6 gap-4 border-b border-border pb-3">
-          {Array.from({ length: 6 }).map((_, i) => (
+        <div className="grid grid-cols-7 gap-4 border-b border-border pb-3">
+          {Array.from({ length: 7 }).map((_, i) => (
             <div key={i} className="h-3 animate-pulse rounded bg-muted" />
           ))}
         </div>
       </div>
       <div className="space-y-3 p-6">
         {Array.from({ length: 4 }).map((_, row) => (
-          <div key={row} className="grid grid-cols-6 items-center gap-4">
+          <div key={row} className="grid grid-cols-7 items-center gap-4">
             <div className="flex items-center gap-3">
               <div className="h-9 w-9 animate-pulse rounded-lg bg-muted" />
               <div className="space-y-1.5">

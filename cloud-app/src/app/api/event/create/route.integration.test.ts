@@ -205,6 +205,7 @@ describe("POST /api/event/create (integration)", () => {
           deviceName: DEVICE_NAME,
           sensorKey: "core-heartbeat",
           type: "heartbeat",
+          value: 1,
           timestamp: new Date().toISOString(),
         },
         DEVICE_TOKEN,
@@ -214,5 +215,38 @@ describe("POST /api/event/create (integration)", () => {
     const after = await Device.findOne({ name: DEVICE_NAME });
     expect(after?.status).toBe("online");
     expect(after?.lastSeen).toBeInstanceOf(Date);
+    expect(after?.lastSeenAt).toBeInstanceOf(Date);
+    expect(after?.lastHeartbeatAt).toBeInstanceOf(Date);
+  });
+
+  it("marks the device offline on an offline status event and still creates a tamper alarm", async () => {
+    await Device.updateOne(
+      { name: DEVICE_NAME },
+      { $set: { status: "online", lastSeenAt: new Date() } },
+    );
+
+    const res = await POST(
+      buildRequest(
+        {
+          deviceName: DEVICE_NAME,
+          sensorKey: "push-button:0-status",
+          type: "tamper",
+          value: 0,
+          message: "HARDWARIO node offline: push-button:0",
+          timestamp: new Date().toISOString(),
+        },
+        DEVICE_TOKEN,
+      ) as never,
+    );
+    expect(res.status).toBe(201);
+
+    const device = await Device.findOne({ name: DEVICE_NAME });
+    expect(device?.status).toBe("offline");
+    expect(device?.lastSeenAt).toBeInstanceOf(Date);
+    expect(device?.lastOfflineAt).toBeInstanceOf(Date);
+
+    const alarm = await Alarm.findOne({ category: "tamper" });
+    expect(alarm?.severity).toBe("critical");
+    expect(alarm?.state).toBe("open");
   });
 });

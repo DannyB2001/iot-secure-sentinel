@@ -1,11 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Bell, Cpu, OctagonAlert } from "lucide-react";
+import { Activity, Bell, Cpu, OctagonAlert, Thermometer } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import type { DashboardOverviewCounts } from "@/lib/dashboard-overview";
 import { TONE, type Tone } from "@/lib/tone";
 import { cn } from "@/lib/utils";
+import { THRESHOLDS } from "@/services/alarm-classifier";
 
 async function fetchOverview(): Promise<DashboardOverviewCounts> {
   const res = await fetch("/api/dashboard/overview", { cache: "no-store" });
@@ -25,6 +26,10 @@ export function DashboardOverview({ initialCounts }: { initialCounts: DashboardO
   const allClear = counts.alarmsOpen === 0 && counts.alarmsCritical === 0;
   const overviewTone: Tone =
     counts.alarmsCritical > 0 ? "destructive" : allClear ? "success" : "warning";
+  const temperatureWarning =
+    counts.latestTemperature !== null &&
+    (counts.latestTemperature.value >= THRESHOLDS.tempWarnHigh ||
+      counts.latestTemperature.value <= THRESHOLDS.tempWarnLow);
 
   return (
     <div className="space-y-8">
@@ -46,7 +51,7 @@ export function DashboardOverview({ initialCounts }: { initialCounts: DashboardO
 
       <section
         aria-label="System health summary"
-        className="grid gap-4 md:grid-cols-2 lg:grid-cols-4"
+        className="grid gap-4 md:grid-cols-2 xl:grid-cols-5"
       >
         <StatCard
           title="Devices"
@@ -71,6 +76,16 @@ export function DashboardOverview({ initialCounts }: { initialCounts: DashboardO
           subtitle={counts.alarmsCritical === 0 ? "All clear" : "Operator attention required"}
           tone={counts.alarmsCritical > 0 ? "destructive" : "success"}
           href="/alarms"
+        />
+        <StatCard
+          title="Temperature"
+          icon={Thermometer}
+          value={
+            counts.latestTemperature ? `${counts.latestTemperature.value.toFixed(1)} C` : "-"
+          }
+          subtitle={counts.latestTemperature?.deviceName ?? "No reading yet"}
+          tone={temperatureWarning ? "warning" : "neutral"}
+          href="/devices"
         />
         <StatCard
           title="Events (24h)"
