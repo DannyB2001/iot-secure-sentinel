@@ -67,7 +67,7 @@ resource "aws_amplify_branch" "main" {
     MONGODB_URI         = var.mongodb_uri
     AUTH_SECRET         = var.auth_secret
     NEXTAUTH_SECRET     = var.auth_secret
-    NEXTAUTH_URL        = "https://${var.github_branch}.${aws_amplify_app.iris_gateway.default_domain}"
+    NEXTAUTH_URL        = var.custom_domain != "" ? "https://www.${var.custom_domain}" : "https://${var.github_branch}.${aws_amplify_app.iris_gateway.default_domain}"
     SEED_ADMIN_EMAIL    = var.seed_admin_email
     SEED_ADMIN_PASSWORD = var.seed_admin_password
     SEED_DEVICE_NAME    = var.seed_device_name
