@@ -27,7 +27,7 @@ export async function loadDashboardOverview(): Promise<DashboardOverviewCounts> 
       Alarm.countDocuments({ state: "open" }),
       Alarm.countDocuments({ state: "open", severity: "critical" }),
       Event.countDocuments({ timestamp: { $gte: since24h } }),
-      Event.findOne({ type: "temperature", value: { $type: "number" } })
+      Event.findOne({ type: "temperature", value: { $exists: true } })
         .select("deviceId value timestamp")
         .sort({ timestamp: -1 })
         .lean(),
@@ -47,7 +47,7 @@ export async function loadDashboardOverview(): Promise<DashboardOverviewCounts> 
     alarmsCritical,
     eventsLast24h,
     latestTemperature:
-      latestTemperature?.value === undefined
+      latestTemperature == null || latestTemperature.value == null
         ? null
         : {
             value: latestTemperature.value,

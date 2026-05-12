@@ -3,7 +3,7 @@ import { getToken } from "next-auth/jwt";
 
 const PROTECTED_PREFIXES = ["/dashboard", "/devices", "/alarms"];
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isProtected = PROTECTED_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   if (!isProtected) return NextResponse.next();
