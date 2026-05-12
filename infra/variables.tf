@@ -68,3 +68,9 @@ variable "seed_device_name" {
   type        = string
   default     = "iris-gateway-prod"
 }
+
+variable "custom_domain" {
+  description = "Custom domain to associate with the Amplify app (apex + www → main branch). Leave empty to skip custom domain setup."
+  type        = string
+  default     = ""
+}
