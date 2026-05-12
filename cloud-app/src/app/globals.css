@@ -1,7 +1,10 @@
 @import "tailwindcss";
 
+/* Tailwind v4 dark variant: `.dark` on <html> toggles dark tokens via cascade. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
-  /* Iris brand: deep violet primary, neutral cool surface, distinctive accent */
+  /* Iris brand, light: deep violet primary on cool near-white surface */
   --color-background: hsl(255 25% 98%);
   --color-foreground: hsl(255 25% 12%);
 
@@ -47,6 +50,45 @@
   --radius-xl: 1.125rem;
 }
 
+/* Iris brand, dark: iris-tinted near-black with lifted neutrals so violet still reads as accent */
+.dark {
+  --color-background: hsl(255 25% 6%);
+  --color-foreground: hsl(255 15% 92%);
+
+  --color-border: hsl(255 18% 18%);
+  --color-input: hsl(255 18% 16%);
+  --color-ring: hsl(263 80% 65%);
+
+  --color-primary: hsl(263 80% 68%);
+  --color-primary-foreground: hsl(255 25% 8%);
+  --color-primary-soft: hsl(263 50% 18%);
+
+  --color-secondary: hsl(255 18% 14%);
+  --color-secondary-foreground: hsl(255 15% 88%);
+
+  --color-muted: hsl(255 18% 13%);
+  --color-muted-foreground: hsl(255 10% 62%);
+
+  --color-destructive: hsl(0 75% 62%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-destructive-soft: hsl(0 50% 18%);
+
+  --color-warning: hsl(32 95% 60%);
+  --color-warning-foreground: hsl(255 25% 8%);
+  --color-warning-soft: hsl(32 50% 16%);
+
+  --color-success: hsl(150 60% 55%);
+  --color-success-foreground: hsl(255 25% 8%);
+  --color-success-soft: hsl(150 40% 14%);
+
+  --color-info: hsl(214 90% 65%);
+  --color-info-foreground: hsl(255 25% 8%);
+  --color-info-soft: hsl(214 50% 16%);
+
+  --color-card: hsl(255 22% 9%);
+  --color-card-foreground: hsl(255 15% 92%);
+}
+
 html,
 body {
   height: 100%;
@@ -61,7 +103,7 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* Subtle iris gradient mesh used on the auth screen */
+/* Iris gradient mesh on the auth screen. Always rendered on a dark backdrop, no per-theme variant. */
 .iris-mesh {
   background:
     radial-gradient(at 20% 20%, hsl(263 90% 60% / 0.35) 0px, transparent 50%),
@@ -71,11 +113,25 @@ body {
     linear-gradient(135deg, hsl(263 50% 18%) 0%, hsl(255 50% 10%) 100%);
 }
 
-/* Animated pulse for live polling indicator */
 @keyframes iris-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
 }
 .animate-pulse-soft {
   animation: iris-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* New-alarm row flash. Plays once when a critical/warning row enters the list. */
+@keyframes alarm-flash {
+  0% { background-color: hsl(0 75% 55% / 0.18); }
+  100% { background-color: transparent; }
+}
+.alarm-flash {
+  animation: alarm-flash 1.4s ease-out;
+}
+
+/* Reduce motion preference: kill the row flash and the soft pulse. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-soft { animation: none; }
+  .alarm-flash { animation: none; }
 }

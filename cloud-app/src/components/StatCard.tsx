@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { ArrowRight, type LucideIcon } from "lucide-react";
+import { ArrowUpRight, type LucideIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { IconMedallion } from "@/components/ui/IconMedallion";
 import { TONE, type Tone } from "@/lib/tone";
 import { cn } from "@/lib/utils";
 
@@ -9,8 +10,9 @@ export function StatCard({
   value,
   subtitle,
   tone,
-  icon: Icon,
+  icon,
   href,
+  featured = false,
 }: {
   title: string;
   value: number | string;
@@ -18,10 +20,19 @@ export function StatCard({
   tone: Tone;
   icon: LucideIcon;
   href?: string;
+  /** Slightly larger value + a tinted ring. Used for the primary stat on a row. */
+  featured?: boolean;
 }) {
   const style = TONE[tone];
-  const inner = (
-    <Card className="relative overflow-hidden transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md">
+  const card = (
+    <Card
+      className={cn(
+        "relative h-full overflow-hidden border-border/80 transition-colors duration-150",
+        href &&
+          "group-hover:border-primary/40 group-focus-visible:border-primary/40",
+        featured && "ring-1 ring-inset ring-primary/15",
+      )}
+    >
       <span
         aria-hidden="true"
         className={cn(
@@ -31,17 +42,24 @@ export function StatCard({
       />
       <CardHeader className="flex-row items-start justify-between gap-2 pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <span className={cn("flex h-8 w-8 items-center justify-center rounded-lg", style.iconWrap)}>
-          <Icon className="h-4 w-4" aria-hidden="true" />
-        </span>
+        <IconMedallion icon={icon} tone={tone} size={featured ? "md" : "sm"} />
       </CardHeader>
       <CardContent className="space-y-1">
-        <p className={cn("text-3xl font-semibold tabular-nums", style.value)}>{value}</p>
+        <p
+          className={cn(
+            "font-semibold tabular-nums",
+            featured ? "text-4xl" : "text-3xl",
+            style.value,
+          )}
+        >
+          {value}
+        </p>
         <div className="flex items-center justify-between text-xs">
           <span className="text-muted-foreground">{subtitle}</span>
           {href ? (
-            <span className="inline-flex items-center gap-1 font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-              View <ArrowRight className="h-3 w-3" />
+            <span className="inline-flex items-center gap-0.5 font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+              Open
+              <ArrowUpRight className="h-3 w-3" />
             </span>
           ) : null}
         </div>
@@ -49,13 +67,13 @@ export function StatCard({
     </Card>
   );
 
-  if (!href) return inner;
+  if (!href) return card;
   return (
     <Link
       href={href}
       className="group rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
     >
-      {inner}
+      {card}
     </Link>
   );
 }

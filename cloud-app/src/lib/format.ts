@@ -33,3 +33,17 @@ export function formatAbsolute(date: Date | string | number): string {
     second: "2-digit",
   });
 }
+
+/**
+ * Short freshness label for polled UI: "Updated just now", "Updated 12s ago",
+ * "Updated 5m ago", "Updated 2h ago". Caller passes a non-negative second count.
+ */
+export function formatSecondsAgo(seconds: number): string {
+  const safe = Math.max(0, Math.round(seconds));
+  if (safe < 5) return "Updated just now";
+  if (safe < 60) return `Updated ${safe}s ago`;
+  const minutes = Math.round(safe / 60);
+  if (minutes < 60) return `Updated ${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  return `Updated ${hours}h ago`;
+}

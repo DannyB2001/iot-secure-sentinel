@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { DashboardNav } from "@/components/DashboardNav";
 import { Logo } from "@/components/Logo";
 import { SignOutButton } from "@/components/SignOutButton";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -16,7 +17,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-6 py-3">
           <Logo />
           <DashboardNav variant="desktop" />
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <div className="hidden items-center gap-2 sm:flex">
               <span
                 aria-hidden="true"
@@ -29,6 +30,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 <p className="text-xs text-muted-foreground">{session.user.role}</p>
               </div>
             </div>
+            <ThemeToggle />
             <SignOutButton />
           </div>
         </div>

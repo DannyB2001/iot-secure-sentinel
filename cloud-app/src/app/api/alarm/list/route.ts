@@ -17,12 +17,15 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const parsed = alarmListQuerySchema.safeParse({
     state: searchParams.get("state") ?? undefined,
+    severity: searchParams.get("severity") ?? undefined,
     limit: searchParams.get("limit") ?? undefined,
   });
   if (!parsed.success) return fromZod(parsed.error);
 
   await connectDb();
-  const alarms = await Alarm.find({ state: parsed.data.state })
+  const filter: Record<string, unknown> = { state: parsed.data.state };
+  if (parsed.data.severity) filter.severity = parsed.data.severity;
+  const alarms = await Alarm.find(filter)
     .sort({ createdAt: -1 })
     .limit(parsed.data.limit)
     .lean();

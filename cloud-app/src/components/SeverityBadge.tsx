@@ -1,9 +1,8 @@
-import { AlertTriangle, Info, OctagonAlert } from "lucide-react";
+import { AlertTriangle, Info, OctagonAlert, type LucideIcon } from "lucide-react";
+import type { AlarmSeverity } from "@/lib/validation/alarm";
 import { cn } from "@/lib/utils";
 
-type Severity = "info" | "warning" | "critical";
-
-const STYLES: Record<Severity, { wrap: string; icon: typeof Info; label: string }> = {
+const STYLES: Record<AlarmSeverity, { wrap: string; icon: LucideIcon; label: string }> = {
   info: {
     wrap: "bg-info-soft text-info ring-info/20",
     icon: Info,
@@ -25,7 +24,7 @@ export function SeverityBadge({
   severity,
   className,
 }: {
-  severity: Severity;
+  severity: AlarmSeverity;
   className?: string;
 }) {
   const style = STYLES[severity];

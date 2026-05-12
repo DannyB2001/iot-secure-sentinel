@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { formatAbsolute, formatRelative } from "./format";
+import { formatAbsolute, formatRelative, formatSecondsAgo } from "./format";
 
 const NOW = new Date("2026-04-27T12:00:00.000Z");
 
@@ -79,5 +79,36 @@ describe("formatAbsolute", () => {
   it("accepts ISO string and number", () => {
     expect(formatAbsolute(NOW.toISOString())).toMatch(/2026/);
     expect(formatAbsolute(NOW.getTime())).toMatch(/2026/);
+  });
+});
+
+describe("formatSecondsAgo", () => {
+  it("renders 'just now' below 5 seconds", () => {
+    expect(formatSecondsAgo(0)).toBe("Updated just now");
+    expect(formatSecondsAgo(4)).toBe("Updated just now");
+  });
+
+  it("rolls into seconds at the 5s boundary", () => {
+    expect(formatSecondsAgo(5)).toBe("Updated 5s ago");
+    expect(formatSecondsAgo(59)).toBe("Updated 59s ago");
+  });
+
+  it("rolls into minutes at the 60s boundary", () => {
+    expect(formatSecondsAgo(60)).toBe("Updated 1m ago");
+    expect(formatSecondsAgo(90)).toBe("Updated 2m ago");
+  });
+
+  it("rolls into hours past 60 minutes", () => {
+    expect(formatSecondsAgo(3600)).toBe("Updated 1h ago");
+    expect(formatSecondsAgo(7200)).toBe("Updated 2h ago");
+  });
+
+  it("clamps negative seconds to 'just now'", () => {
+    expect(formatSecondsAgo(-30)).toBe("Updated just now");
+  });
+
+  it("rounds fractional seconds", () => {
+    expect(formatSecondsAgo(4.4)).toBe("Updated just now");
+    expect(formatSecondsAgo(4.6)).toBe("Updated 5s ago");
   });
 });

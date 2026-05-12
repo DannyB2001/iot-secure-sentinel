@@ -1,8 +1,9 @@
 import type { EventCreateInput } from "@/lib/validation/event";
+import type { AlarmCategory, AlarmSeverity } from "@/lib/validation/alarm";
 
 export type AlarmDraft = {
-  severity: "info" | "warning" | "critical";
-  category: "temperature" | "tamper" | "battery" | "offline";
+  severity: AlarmSeverity;
+  category: AlarmCategory;
   message: string;
 };
 

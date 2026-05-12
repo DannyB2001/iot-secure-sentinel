@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import { Toaster } from "sonner";
 import { Providers } from "@/components/providers";
+import { AppToaster } from "@/components/AppToaster";
+import { THEME_BOOTSTRAP_SCRIPT } from "@/components/ThemeProvider";
 import "./globals.css";
 
 const inter = Inter({
@@ -17,19 +18,16 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
+      <head>
+        {/* Theme bootstrap. Runs before paint so the initial frame matches the user's choice (no flash of light content). */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
+      </head>
       <body>
-        <Providers>{children}</Providers>
-        <Toaster
-          position="bottom-right"
-          richColors
-          closeButton
-          toastOptions={{
-            classNames: {
-              toast: "rounded-lg border-border",
-            },
-          }}
-        />
+        <Providers>
+          {children}
+          <AppToaster />
+        </Providers>
       </body>
     </html>
   );

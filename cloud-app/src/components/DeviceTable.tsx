@@ -2,11 +2,16 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { BatteryLow, Cpu, Router, ServerCrash, Thermometer } from "lucide-react";
+import { DevicesSkeleton } from "@/components/DevicesSkeleton";
 import { EmptyState } from "@/components/EmptyState";
+import { PollIndicator } from "@/components/PollIndicator";
 import { RelativeTime } from "@/components/RelativeTime";
 import { StatusDot } from "@/components/StatusDot";
+import { IconMedallion } from "@/components/ui/IconMedallion";
 import { cn } from "@/lib/utils";
 import { THRESHOLDS } from "@/services/alarm-classifier";
+
+const POLL_INTERVAL_SECONDS = 10;
 
 type DeviceRow = {
   id: string;
@@ -34,8 +39,10 @@ export function DeviceTable() {
   const query = useQuery({
     queryKey: ["devices"],
     queryFn: fetchDevices,
-    refetchInterval: 10000,
+    refetchInterval: POLL_INTERVAL_SECONDS * 1000,
   });
+
+  const items = query.data ?? [];
 
   if (query.isLoading) return <DevicesSkeleton />;
   if (query.isError) {
@@ -49,141 +56,124 @@ export function DeviceTable() {
     );
   }
 
-  const items = query.data ?? [];
-  if (items.length === 0) {
-    return (
-      <EmptyState
-        icon={Cpu}
-        title="No devices registered yet."
-        description="Once a gateway or sensor node registers, it will appear here."
-      />
-    );
-  }
-
   return (
-    <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
-      <table className="w-full min-w-[920px] text-sm">
-        <thead className="border-b border-border bg-secondary/40 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          <tr>
-            <th className="px-6 py-3">Device</th>
-            <th className="px-6 py-3">Status</th>
-            <th className="px-6 py-3">Location</th>
-            <th className="px-6 py-3">Temperature</th>
-            <th className="px-6 py-3">Battery</th>
-            <th className="px-6 py-3">Firmware</th>
-            <th className="px-6 py-3">Last seen</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((device) => {
-            const Icon = device.type === "gateway" ? Router : Cpu;
-            const lowBattery =
-              device.batteryVoltage !== null && device.batteryVoltage <= THRESHOLDS.batteryWarn;
-            const temperatureWarning =
-              device.temperatureC !== null &&
-              (device.temperatureC >= THRESHOLDS.tempWarnHigh ||
-                device.temperatureC <= THRESHOLDS.tempWarnLow);
-            return (
-              <tr
-                key={device.id}
-                className="border-t border-border transition-colors first:border-t-0 hover:bg-secondary/40"
-              >
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-soft text-primary">
-                      <Icon className="h-4 w-4" aria-hidden="true" />
-                    </span>
-                    <div>
-                      <div className="font-medium">{device.name}</div>
-                      <div className="text-xs capitalize text-muted-foreground">
-                        {device.type === "iotNode" ? "IoT node" : "Gateway"}
-                      </div>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <StatusDot status={device.status} />
-                </td>
-                <td className="px-6 py-4 text-muted-foreground">{device.location ?? NO_VALUE}</td>
-                <td className="px-6 py-4 tabular-nums">
-                  {device.temperatureC !== null ? (
-                    <div className="flex flex-col gap-0.5">
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1",
-                          temperatureWarning ? "text-warning" : "text-foreground",
-                        )}
-                      >
-                        <Thermometer className="h-4 w-4" aria-hidden="true" />
-                        {device.temperatureC.toFixed(1)} C
-                      </span>
-                      {device.temperatureAt ? (
-                        <span className="text-xs text-muted-foreground">
-                          <RelativeTime date={device.temperatureAt} />
-                        </span>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground">{NO_VALUE}</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 tabular-nums">
-                  {device.batteryVoltage !== null ? (
-                    <span
-                      className={
-                        lowBattery
-                          ? "inline-flex items-center gap-1 text-warning"
-                          : "text-foreground"
-                      }
-                    >
-                      {lowBattery ? <BatteryLow className="h-4 w-4" aria-hidden="true" /> : null}
-                      {device.batteryVoltage.toFixed(2)} V
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">{NO_VALUE}</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 font-mono text-xs text-muted-foreground">
-                  {device.firmwareVersion ?? NO_VALUE}
-                </td>
-                <td className="px-6 py-4 text-xs text-muted-foreground">
-                  {device.lastSeen ? <RelativeTime date={device.lastSeen} /> : "never"}
-                </td>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span className="tabular-nums">
+          {items.length} {items.length === 1 ? "device" : "devices"} registered
+        </span>
+        <PollIndicator
+          intervalSeconds={POLL_INTERVAL_SECONDS}
+          lastUpdated={query.dataUpdatedAt}
+          isFetching={query.isFetching}
+        />
+      </div>
+
+      {items.length === 0 ? (
+        <EmptyState
+          icon={Cpu}
+          title="No devices registered yet"
+          description="Once a gateway or sensor node authenticates, it will appear here."
+        />
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
+          <table className="w-full min-w-[920px] text-sm">
+            <thead className="border-b border-border bg-secondary/40 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-6 py-3">Device</th>
+                <th className="px-6 py-3">Status</th>
+                <th className="px-6 py-3">Location</th>
+                <th className="px-6 py-3">Temperature</th>
+                <th className="px-6 py-3">Battery</th>
+                <th className="px-6 py-3">Firmware</th>
+                <th className="px-6 py-3">Last seen</th>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {items.map((device) => {
+                const Icon = device.type === "gateway" ? Router : Cpu;
+                const lowBattery =
+                  device.batteryVoltage !== null && device.batteryVoltage <= THRESHOLDS.batteryWarn;
+                const temperatureWarning =
+                  device.temperatureC !== null &&
+                  (device.temperatureC >= THRESHOLDS.tempWarnHigh ||
+                    device.temperatureC <= THRESHOLDS.tempWarnLow);
+                return (
+                  <tr
+                    key={device.id}
+                    className="border-t border-border transition-colors first:border-t-0 hover:bg-secondary/40"
+                  >
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <IconMedallion icon={Icon} tone="primary" size="md" />
+                        <div>
+                          <div className="font-medium">{device.name}</div>
+                          <div className="text-xs capitalize text-muted-foreground">
+                            {device.type === "iotNode" ? "IoT node" : "Gateway"}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <StatusDot status={device.status} />
+                    </td>
+                    <td className="px-6 py-4 text-muted-foreground">
+                      {device.location ?? NO_VALUE}
+                    </td>
+                    <td className="px-6 py-4 tabular-nums">
+                      {device.temperatureC !== null ? (
+                        <div className="flex flex-col gap-0.5">
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-1",
+                              temperatureWarning ? "text-warning" : "text-foreground",
+                            )}
+                          >
+                            <Thermometer className="h-4 w-4" aria-hidden="true" />
+                            {device.temperatureC.toFixed(1)} C
+                          </span>
+                          {device.temperatureAt ? (
+                            <span className="text-xs text-muted-foreground">
+                              <RelativeTime date={device.temperatureAt} />
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">{NO_VALUE}</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 tabular-nums">
+                      {device.batteryVoltage !== null ? (
+                        <span
+                          className={
+                            lowBattery
+                              ? "inline-flex items-center gap-1 text-warning"
+                              : "text-foreground"
+                          }
+                        >
+                          {lowBattery ? (
+                            <BatteryLow className="h-4 w-4" aria-hidden="true" />
+                          ) : null}
+                          {device.batteryVoltage.toFixed(2)} V
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">{NO_VALUE}</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 font-mono text-xs text-muted-foreground">
+                      {device.firmwareVersion ?? NO_VALUE}
+                    </td>
+                    <td className="px-6 py-4 text-xs text-muted-foreground">
+                      {device.lastSeen ? <RelativeTime date={device.lastSeen} /> : "never"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
 
-function DevicesSkeleton() {
-  return (
-    <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
-      <div className="px-6 py-3">
-        <div className="grid grid-cols-7 gap-4 border-b border-border pb-3">
-          {Array.from({ length: 7 }).map((_, i) => (
-            <div key={i} className="h-3 animate-pulse rounded bg-muted" />
-          ))}
-        </div>
-      </div>
-      <div className="space-y-3 p-6">
-        {Array.from({ length: 4 }).map((_, row) => (
-          <div key={row} className="grid grid-cols-7 items-center gap-4">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 animate-pulse rounded-lg bg-muted" />
-              <div className="space-y-1.5">
-                <div className="h-3 w-24 animate-pulse rounded bg-muted" />
-                <div className="h-2 w-12 animate-pulse rounded bg-muted" />
-              </div>
-            </div>
-            {Array.from({ length: 5 }).map((_, col) => (
-              <div key={col} className="h-3 animate-pulse rounded bg-muted" />
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}

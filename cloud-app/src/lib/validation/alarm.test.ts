@@ -61,4 +61,23 @@ describe("alarmListQuerySchema", () => {
     const result = alarmListQuerySchema.safeParse({ state: "ohno" });
     expect(result.success).toBe(false);
   });
+
+  it("accepts a known severity", () => {
+    const result = alarmListQuerySchema.safeParse({ severity: "critical" });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.severity).toBe("critical");
+  });
+
+  it("leaves severity undefined when not provided", () => {
+    const result = alarmListQuerySchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.severity).toBeUndefined();
+  });
+
+  it("rejects unknown severity", () => {
+    const result = alarmListQuerySchema.safeParse({ severity: "blocker" });
+    expect(result.success).toBe(false);
+  });
 });
