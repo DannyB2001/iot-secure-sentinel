@@ -26,6 +26,7 @@ resource "aws_amplify_app" "iris_gateway" {
             build:
               commands:
                 - export PATH="$HOME/.bun/bin:$PATH"
+                - env | grep -E '^(MONGODB_URI|AUTH_SECRET|NEXTAUTH_SECRET|NEXTAUTH_URL|SEED_ADMIN_EMAIL|SEED_ADMIN_PASSWORD|SEED_DEVICE_NAME|SEED_DEVICE_TOKEN|NODE_ENV)=' >> .env.production
                 - bun run build
           artifacts:
             baseDirectory: .next
