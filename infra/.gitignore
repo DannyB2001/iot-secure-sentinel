@@ -1,0 +1,19 @@
+# local secrets
+terraform.tfvars
+*.auto.tfvars
+.terraform-deployer-policy.json
+.env
+
+# state
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform/
+
+# crash log
+crash.log
+crash.*.log
+
+# plan files
+*.tfplan
+tfplan
